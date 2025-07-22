@@ -26,22 +26,44 @@ const Header = () => {
           {/* Navigation */}
           <nav className="hidden md:flex items-center gap-8">
             <a 
-              href="/customer-support"
+              href="#features"
               className="text-muted-foreground hover:text-foreground transition-colors link-animated font-medium"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollToSection('features');
+              }}
             >
-              Customer Support
+              Features
             </a>
             <a 
-              href="/healthcare"
+              href="#pricing"
               className="text-muted-foreground hover:text-foreground transition-colors link-animated font-medium"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollToSection('pricing');
+              }}
             >
-              Healthcare
+              Pricing
             </a>
             <a 
-              href="/compliance-hr"
+              href="#resources"
               className="text-muted-foreground hover:text-foreground transition-colors link-animated font-medium"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollToSection('resources');
+              }}
             >
-              Compliance & HR
+              Resources
+            </a>
+            <a 
+              href="#login"
+              className="text-muted-foreground hover:text-foreground transition-colors link-animated font-medium"
+              onClick={(e) => {
+                e.preventDefault();
+                scrollToSection('login');
+              }}
+            >
+              Login
             </a>
           </nav>
 
@@ -50,7 +72,7 @@ const Header = () => {
             className="hidden sm:flex bg-gradient-primary hover:shadow-glow font-semibold"
             onClick={() => scrollToSection('signup')}
           >
-            Get Sharper Today
+            Start Free Trial
           </Button>
         </div>
       </div>

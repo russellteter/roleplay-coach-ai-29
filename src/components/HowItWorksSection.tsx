@@ -19,7 +19,7 @@ const HowItWorksSection = () => {
       number: "02",
       icon: Mic,
       title: "Speak Naturally",
-      description: "EchoCoach responds in real-time with human-like voice interactions, adapting to your conversation style.",
+      description: "Sharpen responds in real-time with human-like voice interactions, adapting to your conversation style.",
       details: [
         "Natural voice AI responses",
         "Real-time conversation flow",
@@ -45,11 +45,11 @@ const HowItWorksSection = () => {
     <section id="how-it-works" className="py-20 bg-background">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <h2 className="text-3xl sm:text-4xl font-heading font-bold text-foreground mb-6">
-            How EchoCoach Works
+          <h2 className="text-4xl font-heading font-bold text-foreground mb-6">
+            How Sharpen Works
           </h2>
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Three simple steps to transform your team's conversation skills with AI-powered coaching.
+            Transform your conversation skills in three simple steps
           </p>
         </div>
 

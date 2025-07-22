@@ -15,36 +15,26 @@ const HeroSection = () => {
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           {/* Left Column - Content */}
           <div className="fade-in">
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-heading font-bold text-foreground leading-tight mb-8 tracking-tight">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-bold text-foreground leading-tight mb-6 tracking-tight">
               <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Sharpen
+                Real-Time AI Role-Play
               </span>{" "}
-              <span className="text-foreground">Your Voice</span>
+              <span className="text-foreground">for Perfecting Critical Conversations</span>
             </h1>
             
             <p className="text-xl text-muted-foreground mb-10 leading-relaxed font-light max-w-lg">
-              Professional AI voice coaching for critical conversations. Practice safely, get real-time feedback, and build confidence.
+              Practice live conversations, get instant tone & content feedback, and boost call quality by 20%.
             </p>
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row gap-6 mb-12">
               <Button 
                 size="lg"
-                className="text-lg px-10 py-4 rounded-full shadow-glow hover:shadow-elegant transition-all duration-300 font-medium"
+                className="text-lg px-12 py-5 rounded-full shadow-glow hover:shadow-elegant transition-all duration-300 font-semibold min-h-[44px]"
                 onClick={() => scrollToSection('signup')}
               >
-                Start Training
+                Start Free Trial
                 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-              </Button>
-              
-              <Button 
-                variant="outline"
-                size="lg"
-                className="border-2 text-lg px-10 py-4 rounded-full hover:bg-muted/50 transition-all duration-300 font-medium"
-                onClick={() => scrollToSection('voice-demo')}
-              >
-                <Play className="w-5 h-5 mr-2" />
-                Try Demo
               </Button>
             </div>
 

@@ -1,15 +1,14 @@
 
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
-import UseCasesPanelSection from "@/components/UseCasesPanelSection";
-import ProblemSection from "@/components/ProblemSection";
-import UseCasesSection from "@/components/UseCasesSection";
+import ProblemSolutionSection from "@/components/ProblemSolutionSection";
 import HowItWorksSection from "@/components/HowItWorksSection";
-import VoiceAISection from "@/components/VoiceAISection";
-import ContextUploadSection from "@/components/ContextUploadSection";
-import SocialProofSection from "@/components/SocialProofSection";
+import FeaturesSection from "@/components/FeaturesSection";
+import EnhancedSocialProofSection from "@/components/EnhancedSocialProofSection";
+import PricingSection from "@/components/PricingSection";
 import SignupSection from "@/components/SignupSection";
 import Footer from "@/components/Footer";
+import StickyCallToAction from "@/components/StickyCallToAction";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -18,17 +17,23 @@ const Index = () => {
   return (
     <div className="min-h-screen">
       <Header />
+      <StickyCallToAction />
       <HeroSection />
+      <ProblemSolutionSection />
+      <HowItWorksSection />
+      <FeaturesSection />
+      <EnhancedSocialProofSection />
+      <PricingSection />
       
       {/* Use Cases Navigation */}
-      <section className="py-16 bg-background">
+      <section className="py-20 bg-background" id="resources">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-foreground mb-4">
-              Choose Your Use Case
+            <h2 className="text-4xl font-heading font-bold text-foreground mb-6">
+              Industry-Specific Training
             </h2>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              Start practicing with scenarios tailored to your industry and role
+              Explore specialized role-play scenarios designed for your industry
             </p>
           </div>
           
@@ -81,13 +86,6 @@ const Index = () => {
         </div>
       </section>
       
-      <UseCasesPanelSection />
-      <ProblemSection />
-      <VoiceAISection /> {/* Now contains the real-time voice demo */}
-      <ContextUploadSection />
-      <UseCasesSection />
-      <HowItWorksSection />
-      <SocialProofSection />
       <SignupSection />
       <Footer />
     </div>

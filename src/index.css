@@ -17,23 +17,23 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    /* Primary - Modern Deep Blue */
-    --primary: 221 83% 53%; /* #2563EB - Professional blue */
+    /* Primary - Vibrant Blue */
+    --primary: 216 100% 50%; /* #0066FF - Vibrant Blue for CTAs */
     --primary-foreground: 0 0% 98%;
-    --primary-glow: 221 100% 70%;
+    --primary-glow: 216 100% 70%;
 
     /* Secondary - Sophisticated Gray */
-    --secondary: 210 40% 98%; /* #F8FAFC */
+    --secondary: 210 40% 98%; /* #F7F7F7 - Light Gray */
     --secondary-foreground: 240 10% 3.9%;
 
     /* Muted tones */
-    --muted: 210 40% 98%;
+    --muted: 210 40% 98%; /* #F7F7F7 */
     --muted-foreground: 240 3.8% 46.1%;
 
-    /* Accent - Modern Emerald */
-    --accent: 160 84% 39%; /* #059669 - Fresh emerald */
+    /* Accent - Warm Orange */
+    --accent: 24 100% 50%; /* #FF6600 - Warm Orange for highlights */
     --accent-foreground: 0 0% 98%;
-    --accent-glow: 160 100% 60%;
+    --accent-glow: 24 100% 70%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
@@ -108,10 +108,32 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    font-size: 18px;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-size: 32px;
+  }
+
+  .text-xl {
+    font-size: 18px;
+    line-height: 1.5;
   }
 }
 
 @layer components {
+  /* Section spacing */
+  .section-padding {
+    padding: 80px 0;
+  }
+  
+  @media (max-width: 768px) {
+    .section-padding {
+      padding: 60px 0;
+    }
+  }
+  
   /* Hero gradient background */
   .hero-gradient {
     background: var(--gradient-hero);

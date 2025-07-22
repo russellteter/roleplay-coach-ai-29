@@ -21,7 +21,7 @@ const SignupSection = () => {
     {
       icon: Mic,
       title: "Free Access to Pilot Program",
-      description: "Be among the first to experience EchoCoach's voice AI technology"
+      description: "Be among the first to experience Sharpen's voice AI technology"
     },
     {
       icon: Users,
@@ -63,12 +63,11 @@ const SignupSection = () => {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Left Column - Benefits */}
           <div>
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-foreground mb-6">
-              Join Our Early Access Program
+            <h2 className="text-4xl font-heading font-bold text-foreground mb-6">
+              Start Your Free Trial Today
             </h2>
             <p className="text-xl text-muted-foreground mb-8">
-              Be among the first to experience the future of conversation training. 
-              Get exclusive access plus personalized setup for your team.
+              Join thousands of professionals using Sharpen to perfect their critical conversations. See results in just 14 days.
             </p>
 
             <div className="space-y-6">
@@ -93,7 +92,7 @@ const SignupSection = () => {
           {/* Right Column - Signup Form */}
           <Card className="p-8 border-0 bg-gradient-subtle shadow-card">
             <h3 className="text-2xl font-heading font-bold text-foreground mb-6">
-              Request Early Access
+              Start Free Trial
             </h3>
             
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -132,16 +131,15 @@ const SignupSection = () => {
 
               <Button 
                 type="submit" 
-                variant="cta" 
                 size="lg" 
-                className="w-full"
+                className="w-full bg-gradient-primary hover:shadow-glow font-semibold min-h-[44px]"
                 disabled={!email || !useCase}
               >
-                Join the Pilot Program
+                Start Free Trial
               </Button>
 
               <p className="text-sm text-muted-foreground text-center">
-                No credit card required. Cancel anytime during the pilot phase.
+                No credit card required • 14-day free trial • Cancel anytime
               </p>
             </form>
           </Card>
