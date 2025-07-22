@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -29,6 +28,7 @@ export const useRealtimeVoice = () => {
   const gainNodeRef = useRef<GainNode | null>(null);
   const retryCountRef = useRef(0);
   const maxRetries = 3;
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -81,7 +81,6 @@ export const useRealtimeVoice = () => {
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
-      retryCountRef.current = 0;
       
       // Set the selected scenario immediately
       if (scenario) {
@@ -93,33 +92,44 @@ export const useRealtimeVoice = () => {
       // Initialize audio system with user interaction
       await initializeAudioContext();
 
-      // Connect to realtime WebSocket with correct URL
-      const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
+      // FIXED: Correct WebSocket URL for Supabase Edge Functions 
+      const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/functions/v1/realtime-voice`;
       audioDebugger.log(`Connecting to: ${wsUrl}`);
       wsRef.current = new WebSocket(wsUrl);
 
-      // Set connection timeout with retry logic
+      // Enhanced connection timeout with exponential backoff
+      const timeoutDuration = Math.min(15000 * Math.pow(1.5, retryCountRef.current), 45000);
       connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
-          audioDebugger.error('Connection timeout after 15 seconds');
+          audioDebugger.error(`Connection timeout after ${timeoutDuration}ms`);
           if (retryCountRef.current < maxRetries) {
-            setConnectionError(`Connection timeout. Retrying... (${retryCountRef.current + 1}/${maxRetries})`);
             retryCountRef.current++;
+            setConnectionError(`Connection timeout. Retrying... (${retryCountRef.current}/${maxRetries})`);
+            // Exponential backoff retry
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (selectedScenario) {
+                connect(selectedScenario);
+              }
+            }, 2000 * retryCountRef.current);
           } else {
-            setConnectionError('Connection failed after multiple attempts. Please check your internet connection and try again.');
+            setConnectionError('Connection failed after multiple attempts. Please check your internet connection and verify the OpenAI API key is configured.');
           }
           if (wsRef.current) {
             wsRef.current.close();
           }
           setIsConnecting(false);
         }
-      }, 15000);
+      }, timeoutDuration);
 
       wsRef.current.onopen = () => {
         audioDebugger.log('WebSocket connected to Supabase edge function');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
+        }
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
         }
         retryCountRef.current = 0; // Reset retry count on successful connection
       };
@@ -141,7 +151,7 @@ export const useRealtimeVoice = () => {
                 audioDebugger.log(`Starting scenario: ${selectedScenario.title}`);
                 setTimeout(() => {
                   sendScenarioOpening(selectedScenario);
-                }, 300); // Reduced delay for faster response
+                }, 300);
               }
               break;
 
@@ -221,7 +231,16 @@ export const useRealtimeVoice = () => {
                 ? data.error 
                 : JSON.stringify(data.error);
               
-              setConnectionError(`OpenAI API Error: ${errorMessage}. This might be a temporary issue - please try again.`);
+              // Enhanced error categorization
+              if (errorMessage.includes('rate_limit')) {
+                setConnectionError('OpenAI API rate limit exceeded. Please wait a moment and try again.');
+              } else if (errorMessage.includes('insufficient_quota')) {
+                setConnectionError('OpenAI API quota exceeded. Please check your OpenAI account billing.');
+              } else if (errorMessage.includes('invalid_api_key')) {
+                setConnectionError('Invalid OpenAI API key. Please check the configuration.');
+              } else {
+                setConnectionError(`OpenAI API Error: ${errorMessage}. This might be a temporary issue - please try again.`);
+              }
               setIsConnecting(false);
               break;
 
@@ -229,7 +248,7 @@ export const useRealtimeVoice = () => {
               audioDebugger.log('OpenAI connection closed');
               setIsConnected(false);
               setIsConnecting(false);
-              setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
+              setConnectionError('OpenAI connection was closed unexpectedly. Please try connecting again.');
               break;
 
             default:
@@ -257,14 +276,28 @@ export const useRealtimeVoice = () => {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
         setIsConnected(false);
         setIsConnecting(false);
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
         
-        // Only show error if it wasn't a clean close
-        if (event.code !== 1000) {
+        // Enhanced error messages based on close codes
+        if (event.code === 1006) {
+          setConnectionError('WebSocket connection failed unexpectedly. This may indicate a server issue or network problem. Please try again.');
+        } else if (event.code === 1000) {
+          // Clean close, don't show error
+        } else if (event.code === 1001) {
+          setConnectionError('Server is going away. Please refresh and try again.');
+        } else if (event.code === 1002) {
+          setConnectionError('WebSocket protocol error. Please try again.');
+        } else if (event.code === 1003) {
+          setConnectionError('Server cannot accept this data type. Please contact support.');
+        } else {
           setConnectionError(`Connection closed unexpectedly (${event.code}). Please try again.`);
         }
       };
@@ -277,16 +310,16 @@ export const useRealtimeVoice = () => {
     }
   }, [selectedScenario]);
 
-  // Simplified scenario opening - remove complex instruction override
+  // Simplified scenario opening - direct and clear
   const sendScenarioOpening = useCallback((scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       audioDebugger.log("Cannot send scenario opening - WebSocket not connected");
       return;
     }
 
-    audioDebugger.log(`Sending simplified scenario opening for: ${scenario.title}`);
+    audioDebugger.log(`Sending direct scenario opening for: ${scenario.title}`);
     
-    // Send simple, clear system message
+    // Send simple, clear system message with the scenario opening
     const systemEvent = {
       type: 'conversation.item.create',
       item: {
@@ -295,7 +328,7 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: `${scenario.prompt} Start the conversation with: "${scenario.openingMessage}"`
+            text: `${scenario.prompt}\n\nStart the conversation by saying: "${scenario.openingMessage}"`
           }
         ]
       }
@@ -310,7 +343,7 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: `Begin the roleplay scenario: ${scenario.title}`
+            text: `Please begin the roleplay scenario: ${scenario.title}`
           }
         ]
       }
@@ -407,6 +440,11 @@ export const useRealtimeVoice = () => {
     if (connectionTimeoutRef.current) {
       clearTimeout(connectionTimeoutRef.current);
       connectionTimeoutRef.current = null;
+    }
+    
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
     
     if (audioQueueRef.current) {
