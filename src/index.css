@@ -1,119 +1,103 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Bold Modern Design System for Sharpen */
 
 @layer base {
   :root {
-    /* EchoCoach Brand Colors - Deep Navy & Teal */
-    --background: 248 249 250; /* Soft white #F8F9FA */
-    --foreground: 215 28% 17%; /* Deep navy text */
+    /* Sharpen Brand Colors - Bold & Modern */
+    --background: 250 250 250; /* Clean white #FAFAFA */
+    --foreground: 15 23 42; /* Slate-900 text */
 
     --card: 0 0% 100%;
-    --card-foreground: 215 28% 17%;
+    --card-foreground: 15 23 42;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 28% 17%;
+    --popover-foreground: 15 23 42;
 
-    /* Primary - Deep Navy */
-    --primary: 225 39% 21%; /* #1B1F3B */
-    --primary-foreground: 248 249 250;
-    --primary-glow: 225 39% 31%;
+    /* Primary - Vibrant Orange */
+    --primary: 24 74% 58%; /* #F97316 */
+    --primary-foreground: 0 0% 98%;
+    --primary-glow: 24 100% 70%;
 
-    /* Secondary - Soft Gray */
-    --secondary: 220 13% 91%; /* #E5E7EB */
-    --secondary-foreground: 215 28% 17%;
+    /* Secondary - Deep Slate */
+    --secondary: 210 40% 94%; /* #F1F5F9 */
+    --secondary-foreground: 15 23 42;
 
     /* Muted tones */
-    --muted: 220 13% 91%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 210 40% 94%;
+    --muted-foreground: 64 12% 47%;
 
-    /* Accent - Fresh Teal */
-    --accent: 175 70% 55%; /* Fresh teal */
-    --accent-foreground: 175 100% 15%;
-    --accent-glow: 175 100% 90%;
+    /* Accent - Electric Purple */
+    --accent: 262 73% 67%; /* #A855F7 */
+    --accent-foreground: 0 0% 98%;
+    --accent-glow: 262 100% 85%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 188 95% 38%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 24 74% 58%;
 
     /* Design system variables */
     --radius: 0.75rem;
     
-    /* Custom gradients */
+    /* Bold gradients */
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
     --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-glow)));
     --gradient-hero: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
     --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
     
-    /* Shadows */
-    --shadow-elegant: 0 10px 30px -10px hsl(var(--primary) / 0.3);
-    --shadow-glow: 0 0 40px hsl(var(--accent-glow) / 0.4);
-    --shadow-card: 0 4px 20px -4px hsl(var(--primary) / 0.1);
+    /* Enhanced shadows */
+    --shadow-elegant: 0 20px 40px -10px hsl(var(--primary) / 0.25);
+    --shadow-glow: 0 0 50px hsl(var(--accent-glow) / 0.5);
+    --shadow-card: 0 8px 25px -5px hsl(var(--primary) / 0.15);
     
-    /* Animations */
+    /* Smooth animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 15 23 42;
+    --foreground: 248 250 252;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 15 23 42;
+    --card-foreground: 248 250 252;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 15 23 42;
+    --popover-foreground: 248 250 252;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 24 74% 58%;
+    --primary-foreground: 15 23 42;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 30 41% 25%;
+    --secondary-foreground: 248 250 252;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 30 41% 25%;
+    --muted-foreground: 156 24% 60%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 262 73% 67%;
+    --accent-foreground: 15 23 42;
 
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 248 250 252;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 30 41% 25%;
+    --input: 30 41% 25%;
+    --ring: 24 74% 58%;
   }
 }
 
@@ -133,7 +117,7 @@ All colors MUST be HSL.
     background: var(--gradient-hero);
   }
   
-  /* Card with elegant shadow */
+  /* Card with bold shadow */
   .card-elegant {
     box-shadow: var(--shadow-card);
     transition: var(--transition-smooth);
@@ -141,7 +125,7 @@ All colors MUST be HSL.
   
   .card-elegant:hover {
     box-shadow: var(--shadow-elegant);
-    transform: translateY(-2px);
+    transform: translateY(-4px);
   }
   
   /* Glow effect for CTAs */
@@ -156,7 +140,7 @@ All colors MUST be HSL.
   
   .link-animated::after {
     content: '';
-    @apply absolute w-full scale-x-0 h-0.5 bottom-0 left-0 bg-accent origin-bottom-right;
+    @apply absolute w-full scale-x-0 h-0.5 bottom-0 left-0 bg-primary origin-bottom-right;
     transition: var(--transition-smooth);
   }
   
@@ -164,16 +148,16 @@ All colors MUST be HSL.
     @apply scale-x-100 origin-bottom-left;
   }
   
-  /* Smooth scale animation */
+  /* Bold scale animation */
   .hover-scale {
     transition: var(--transition-smooth);
   }
   
   .hover-scale:hover {
-    transform: scale(1.05);
+    transform: scale(1.08);
   }
   
-  /* Pulse animation for voice indicators */
+  /* Voice pulse animation */
   .pulse-voice {
     animation: pulse-voice 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
@@ -184,20 +168,20 @@ All colors MUST be HSL.
       transform: scale(1);
     }
     50% {
-      opacity: 0.7;
-      transform: scale(1.1);
+      opacity: 0.8;
+      transform: scale(1.15);
     }
   }
   
   /* Fade in animation */
   .fade-in {
-    animation: fade-in 0.6s ease-out forwards;
+    animation: fade-in 0.8s ease-out forwards;
   }
   
   @keyframes fade-in {
     from {
       opacity: 0;
-      transform: translateY(20px);
+      transform: translateY(30px);
     }
     to {
       opacity: 1;
@@ -205,31 +189,33 @@ All colors MUST be HSL.
     }
   }
   
-  /* Waveform animation */
+  /* Enhanced waveform animation */
   .waveform {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 3px;
   }
   
   .waveform-bar {
-    width: 3px;
-    background: var(--gradient-accent);
-    border-radius: 2px;
-    animation: waveform 1.5s ease-in-out infinite;
+    width: 4px;
+    background: var(--gradient-primary);
+    border-radius: 3px;
+    animation: waveform 1.2s ease-in-out infinite;
   }
   
   .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
   .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
   .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
   .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+  .waveform-bar:nth-child(6) { animation-delay: 0.5s; }
+  .waveform-bar:nth-child(7) { animation-delay: 0.6s; }
   
   @keyframes waveform {
     0%, 100% {
-      height: 4px;
+      height: 6px;
     }
     50% {
-      height: 20px;
+      height: 24px;
     }
   }
 }
