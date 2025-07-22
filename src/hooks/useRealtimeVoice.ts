@@ -1,5 +1,5 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
@@ -12,13 +12,54 @@ import type {
 // Simplified connection state enum
 enum ConnectionState {
   CLOSED = 'CLOSED',
-  OPENING = 'OPENING', 
+  OPENING = 'OPENING',
   CONFIGURED = 'CONFIGURED',
   STARTED = 'STARTED'
 }
 
+interface ConnectionReducerState {
+  status: ConnectionState;
+  retryCount: number;
+}
+
+type ConnectionAction =
+  | { type: 'OPENING' }
+  | { type: 'CONFIGURED' }
+  | { type: 'STARTED' }
+  | { type: 'CLOSED' }
+  | { type: 'TIMEOUT' }
+  | { type: 'RETRY' };
+
+const connectionReducer = (
+  state: ConnectionReducerState,
+  action: ConnectionAction
+): ConnectionReducerState => {
+  switch (action.type) {
+    case 'OPENING':
+      return { ...state, status: ConnectionState.OPENING };
+    case 'CONFIGURED':
+      return { status: ConnectionState.CONFIGURED, retryCount: 0 };
+    case 'STARTED':
+      return { status: ConnectionState.STARTED, retryCount: 0 };
+    case 'CLOSED':
+      return { status: ConnectionState.CLOSED, retryCount: 0 };
+    case 'TIMEOUT':
+    case 'RETRY':
+      return {
+        status: ConnectionState.OPENING,
+        retryCount: state.retryCount + 1
+      };
+    default:
+      return state;
+  }
+};
+
 export const useRealtimeVoice = () => {
-  const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.CLOSED);
+  const [state, dispatch] = useReducer(connectionReducer, {
+    status: ConnectionState.CLOSED,
+    retryCount: 0
+  });
+  const connectionState = state.status;
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -37,8 +78,6 @@ export const useRealtimeVoice = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const retryCountRef = useRef(0);
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const maxRetries = 3;
   const scenarioRef = useRef<Scenario | null>(null);
 
@@ -189,7 +228,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       await sendAndAwaitAck(responseEvent);
       audioDebugger.log("✅ Response creation requested - AI should start speaking now!");
 
-      setConnectionState(ConnectionState.STARTED);
+      dispatch({ type: 'STARTED' });
       
     } catch (error) {
       audioDebugger.error("❌ Failed to send scenario opening", error);
@@ -197,10 +236,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
   }, [sendAndAwaitAck]);
 
-  const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
+  const connect = useCallback(async (scenario?: Scenario, skipDispatch = false): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
-      setConnectionState(ConnectionState.OPENING);
+      if (!skipDispatch) {
+        dispatch({ type: 'OPENING' });
+      }
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
@@ -215,7 +256,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       // Test edge function health first
       const isHealthy = await testEdgeFunctionHealth();
       if (!isHealthy) {
-        setConnectionState(ConnectionState.CLOSED);
+        dispatch({ type: 'CLOSED' });
         return;
       }
       
@@ -226,24 +267,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
       audioDebugger.log(`Connecting to: ${wsUrl}`);
       
-      // Clear any existing connection timeout
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-      
       wsRef.current = new WebSocket(wsUrl);
-
-      // Set connection timeout
-      connectionTimeoutRef.current = setTimeout(() => {
-        if (wsRef.current?.readyState !== WebSocket.OPEN) {
-          audioDebugger.error(`Connection timeout after 20 seconds`);
-          setConnectionError('Connection timeout. The server may be overloaded. Please try again.');
-          if (wsRef.current) {
-            wsRef.current.close();
-          }
-          setConnectionState(ConnectionState.CLOSED);
-        }
-      }, 20000);
 
       wsRef.current.onopen = () => {
         audioDebugger.log('🟢 WebSocket connected to Supabase edge function');
@@ -251,11 +275,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        if (retryTimeoutRef.current) {
-          clearTimeout(retryTimeoutRef.current);
-          retryTimeoutRef.current = null;
-        }
-        retryCountRef.current = 0; // Reset retry count on successful connection
       };
 
       wsRef.current.onmessage = async (event) => {
@@ -276,7 +295,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
             case 'session.update':
               audioDebugger.log('✅ Session configuration updated - READY FOR SCENARIO');
-              setConnectionState(ConnectionState.CONFIGURED);
+              dispatch({ type: 'CONFIGURED' });
               
               // Automatically start scenario if we have one - use ref to avoid race condition
               if (scenarioRef.current) {
@@ -357,12 +376,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               } else {
                 setConnectionError(`Connection Error: ${errorMessage}`);
               }
-              setConnectionState(ConnectionState.CLOSED);
+              dispatch({ type: 'CLOSED' });
               break;
 
             case 'connection.closed':
               audioDebugger.log('🔴 OpenAI connection closed');
-              setConnectionState(ConnectionState.CLOSED);
+              dispatch({ type: 'CLOSED' });
               setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
               break;
 
@@ -382,7 +401,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        setConnectionState(ConnectionState.CLOSED);
+        dispatch({ type: 'CLOSED' });
+        handleRetry();
       };
 
       wsRef.current.onclose = (event) => {
@@ -392,7 +412,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         
-        setConnectionState(ConnectionState.CLOSED);
+        dispatch({ type: 'CLOSED' });
+        handleRetry();
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
@@ -419,9 +440,44 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     } catch (error) {
       audioDebugger.error('❌ Error connecting to realtime voice', error);
       setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
-      setConnectionState(ConnectionState.CLOSED);
+      dispatch({ type: 'CLOSED' });
+      handleRetry();
     }
   }, [sendScenarioOpening, connectionState]);
+
+  const handleRetry = useCallback(() => {
+    if (state.retryCount < maxRetries) {
+      audioDebugger.log(`Retrying connection (${state.retryCount + 1}/${maxRetries})`);
+      dispatch({ type: 'RETRY' });
+      connect(currentScenario ?? undefined, true);
+    } else {
+      audioDebugger.error('Max retries reached');
+      dispatch({ type: 'CLOSED' });
+    }
+  }, [state.retryCount, maxRetries, connect, currentScenario]);
+
+  useEffect(() => {
+    if (connectionState === ConnectionState.OPENING) {
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+      }
+      connectionTimeoutRef.current = setTimeout(() => {
+        audioDebugger.error(`Connection timeout after 20 seconds`);
+        setConnectionError('Connection timeout. The server may be overloaded. Please try again.');
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+        handleRetry();
+      }, 20000);
+    }
+
+    return () => {
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+    };
+  }, [connectionState, handleRetry]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -544,16 +600,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       }
 
       gainNodeRef.current = null;
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
-      }
-      retryCountRef.current = 0;
       scenarioRef.current = null;
       
       // Only update state if component is still mounted
       try {
-        setConnectionState(ConnectionState.CLOSED);
+        dispatch({ type: 'CLOSED' });
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
@@ -571,29 +622,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
   }, [stopAudioCapture]);
 
   const retryConnection = useCallback(() => {
-    if (retryCountRef.current >= maxRetries) {
-      audioDebugger.log('🛑 Max retry attempts reached');
-      return;
-    }
-
-    const delay = Math.min(2 ** retryCountRef.current * 1000, 16000);
-    audioDebugger.log(
-      `🔄 Retrying connection in ${delay}ms (attempt ${retryCountRef.current + 1}/${maxRetries})`
-    );
-
-    if (retryTimeoutRef.current) {
-      clearTimeout(retryTimeoutRef.current);
-    }
-
-    retryTimeoutRef.current = setTimeout(() => {
-      retryCountRef.current += 1;
-      if (currentScenario) {
-        connect(currentScenario);
-      } else {
-        connect();
-      }
-    }, delay);
-  }, [currentScenario, connect]);
 
   useEffect(() => {
     return () => {
