@@ -454,10 +454,15 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
   const stopAudioCapture = useCallback(() => {
     if (recorderRef.current) {
-      audioDebugger.log("Stopping audio capture...");
-      recorderRef.current.stop();
-      recorderRef.current = null;
-      setIsRecording(false);
+      try {
+        audioDebugger.log("Stopping audio capture...");
+        recorderRef.current.stop();
+      } catch (error) {
+        audioDebugger.error("Error stopping audio capture", error);
+      } finally {
+        recorderRef.current = null;
+        setIsRecording(false);
+      }
     }
   }, []);
 
@@ -497,40 +502,63 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
   }, []);
 
   const disconnect = useCallback(() => {
-    audioDebugger.log("🔌 Disconnecting...");
-    stopAudioCapture();
-    
-    if (connectionTimeoutRef.current) {
-      clearTimeout(connectionTimeoutRef.current);
-      connectionTimeoutRef.current = null;
+    try {
+      audioDebugger.log("🔌 Disconnecting...");
+      stopAudioCapture();
+      
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+      
+      if (audioQueueRef.current) {
+        try {
+          audioQueueRef.current.stop();
+        } catch (error) {
+          audioDebugger.error("Error stopping audio queue", error);
+        }
+        audioQueueRef.current = null;
+      }
+      
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch (error) {
+          audioDebugger.error("Error closing WebSocket", error);
+        }
+        wsRef.current = null;
+      }
+      
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch (error) {
+          audioDebugger.error("Error closing audio context", error);
+        }
+        audioContextRef.current = null;
+      }
+      
+      gainNodeRef.current = null;
+      retryCountRef.current = 0;
+      scenarioRef.current = null;
+      
+      // Only update state if component is still mounted
+      try {
+        setConnectionState(ConnectionState.CLOSED);
+        setIsRecording(false);
+        setIsAISpeaking(false);
+        setIsUserSpeaking(false);
+        setTranscript('');
+        setAiResponse('');
+        setCurrentScenario(null);
+        setConnectionError(null);
+      } catch (error) {
+        // Component might be unmounted, ignore state updates
+        audioDebugger.error("Error updating state during disconnect", error);
+      }
+    } catch (error) {
+      audioDebugger.error("Error during disconnect", error);
     }
-    
-    if (audioQueueRef.current) {
-      audioQueueRef.current.stop();
-    }
-    
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    gainNodeRef.current = null;
-    retryCountRef.current = 0;
-    scenarioRef.current = null;
-    
-    setConnectionState(ConnectionState.CLOSED);
-    setIsRecording(false);
-    setIsAISpeaking(false);
-    setIsUserSpeaking(false);
-    setTranscript('');
-    setAiResponse('');
-    setCurrentScenario(null);
-    setConnectionError(null);
   }, [stopAudioCapture]);
 
   const retryConnection = useCallback(() => {
