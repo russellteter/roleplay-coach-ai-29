@@ -70,6 +70,37 @@ export const useRealtimeVoice = () => {
     }
   };
 
+  // Test edge function health before connecting
+  const testEdgeFunctionHealth = async (): Promise<boolean> => {
+    try {
+      audioDebugger.log("🏥 Testing edge function health...");
+      const response = await fetch(
+        `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice/health`,
+        { method: 'GET' }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        audioDebugger.log("✅ Edge function health check passed", data);
+        
+        if (!data.hasOpenAIKey) {
+          setConnectionError('OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your secrets.');
+          return false;
+        }
+        
+        return true;
+      } else {
+        audioDebugger.error("❌ Edge function health check failed", response.status, response.statusText);
+        setConnectionError(`Edge function not responding (${response.status})`);
+        return false;
+      }
+    } catch (error) {
+      audioDebugger.error("❌ Edge function health check error", error);
+      setConnectionError('Cannot reach edge function. Please check your connection.');
+      return false;
+    }
+  };
+
   const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
@@ -82,6 +113,13 @@ export const useRealtimeVoice = () => {
       if (scenario) {
         setCurrentScenario(scenario);
         audioDebugger.log(`Selected scenario: ${scenario.title}`);
+      }
+      
+      // Test edge function health first
+      const isHealthy = await testEdgeFunctionHealth();
+      if (!isHealthy) {
+        setIsConnecting(false);
+        return;
       }
       
       // Initialize audio system
@@ -102,7 +140,7 @@ export const useRealtimeVoice = () => {
       connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           audioDebugger.error(`Connection timeout after 20 seconds`);
-          setConnectionError('Connection timeout. Please check your internet connection and try again.');
+          setConnectionError('Connection timeout. The server may be overloaded. Please try again.');
           if (wsRef.current) {
             wsRef.current.close();
           }
@@ -200,18 +238,23 @@ export const useRealtimeVoice = () => {
 
             case 'error':
               audioDebugger.error('❌ Realtime API error', data.error);
-              const errorMessage = typeof data.error === 'object' && data.error.message 
-                ? data.error.message 
-                : typeof data.error === 'string' 
-                ? data.error 
-                : JSON.stringify(data.error);
+              let errorMessage = 'Unknown error occurred';
               
+              if (typeof data.error === 'object' && data.error.message) {
+                errorMessage = data.error.message;
+              } else if (typeof data.error === 'string') {
+                errorMessage = data.error;
+              }
+              
+              // Categorize errors for better user experience
               if (errorMessage.includes('rate_limit')) {
                 setConnectionError('OpenAI API rate limit exceeded. Please wait a moment and try again.');
               } else if (errorMessage.includes('insufficient_quota')) {
                 setConnectionError('OpenAI API quota exceeded. Please check your OpenAI account billing.');
               } else if (errorMessage.includes('invalid_api_key') || errorMessage.includes('API key')) {
                 setConnectionError('Invalid OpenAI API key. Please check the configuration in your Supabase secrets.');
+              } else if (errorMessage.includes('not configured')) {
+                setConnectionError('OpenAI API key not configured. Please add OPENAI_API_KEY to your Supabase Edge Functions secrets.');
               } else {
                 setConnectionError(`Connection Error: ${errorMessage}`);
               }
@@ -259,7 +302,7 @@ export const useRealtimeVoice = () => {
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
-          setConnectionError('Connection failed unexpectedly. Please check your internet connection and try again.');
+          setConnectionError('Connection failed unexpectedly. This may be due to server issues. Please try again.');
         } else if (event.code === 1000) {
           // Clean close, don't show error unless we weren't expecting it
           if (!connectionError) {
@@ -269,6 +312,8 @@ export const useRealtimeVoice = () => {
           setConnectionError('Server is restarting. Please try again in a moment.');
         } else if (event.code === 1002) {
           setConnectionError('Protocol error. Please refresh the page and try again.');
+        } else if (event.code === 1011) {
+          setConnectionError('Server error occurred. Please check if OpenAI API key is configured properly.');
         } else {
           setConnectionError(`Connection closed (${event.code}). Please try again.`);
         }
@@ -282,7 +327,6 @@ export const useRealtimeVoice = () => {
     }
   }, []);
 
-  // Send scenario opening message
   const sendScenarioOpening = useCallback((scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       audioDebugger.log("Cannot send scenario opening - WebSocket not connected");

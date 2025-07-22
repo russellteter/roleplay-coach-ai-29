@@ -1,5 +1,4 @@
 
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
@@ -8,44 +7,58 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log("🚀 Edge function started, method:", req.method);
+  console.log("🚀 Edge function started, method:", req.method, "URL:", req.url);
   
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    console.log("✅ Handling CORS preflight request");
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  // Check for OpenAI API key first
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    console.error("❌ OPENAI_API_KEY environment variable not found");
-    return new Response(JSON.stringify({
-      error: "OpenAI API key not configured. Please check your environment variables."
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  console.log("✅ OpenAI API key found");
-
-  // Check for WebSocket upgrade
-  const { headers } = req;
-  const upgradeHeader = headers.get("upgrade") || "";
-
-  if (upgradeHeader.toLowerCase() !== "websocket") {
-    console.log("ℹ️ Non-WebSocket request received, returning basic health check");
-    return new Response(JSON.stringify({
-      status: "healthy",
-      message: "Realtime voice edge function is running",
-      timestamp: new Date().toISOString()
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
   try {
+    // Handle CORS preflight requests
+    if (req.method === 'OPTIONS') {
+      console.log("✅ Handling CORS preflight request");
+      return new Response(null, { headers: corsHeaders });
+    }
+
+    // Basic health check endpoint
+    if (req.url.includes('/health') || req.method === 'GET') {
+      console.log("💚 Health check requested");
+      return new Response(JSON.stringify({
+        status: "healthy",
+        message: "Realtime voice edge function is running",
+        timestamp: new Date().toISOString(),
+        hasOpenAIKey: !!Deno.env.get('OPENAI_API_KEY')
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check for OpenAI API key first
+    const apiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!apiKey) {
+      console.error("❌ OPENAI_API_KEY environment variable not found");
+      return new Response(JSON.stringify({
+        error: "OpenAI API key not configured. Please add OPENAI_API_KEY to your Supabase Edge Functions secrets.",
+        instructions: "Go to Supabase Dashboard → Project Settings → Edge Functions → Add secret: OPENAI_API_KEY"
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log("✅ OpenAI API key found");
+
+    // Check for WebSocket upgrade
+    const { headers } = req;
+    const upgradeHeader = headers.get("upgrade") || "";
+
+    if (upgradeHeader.toLowerCase() !== "websocket") {
+      console.log("ℹ️ Non-WebSocket request received");
+      return new Response(JSON.stringify({
+        error: "This endpoint requires WebSocket connection",
+        upgrade: "websocket"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     console.log("🔄 Attempting to upgrade to WebSocket...");
     const { socket, response } = Deno.upgradeWebSocket(req);
     
@@ -59,11 +72,15 @@ serve(async (req) => {
       // Set connection timeout
       connectionTimeout = setTimeout(() => {
         console.error("⏰ OpenAI connection timeout after 15 seconds");
-        socket.send(JSON.stringify({
-          type: "error",
-          error: "Connection to OpenAI timed out. Please try again."
-        }));
-        socket.close();
+        try {
+          socket.send(JSON.stringify({
+            type: "error",
+            error: "Connection to OpenAI timed out. Please try again."
+          }));
+          socket.close();
+        } catch (e) {
+          console.error("Error sending timeout message:", e);
+        }
       }, 15000);
 
       try {
@@ -226,7 +243,8 @@ serve(async (req) => {
     console.error("💥 Fatal error in edge function:", error);
     return new Response(JSON.stringify({
       error: "Internal server error: " + error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      stack: error.stack
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
