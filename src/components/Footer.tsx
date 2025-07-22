@@ -43,7 +43,7 @@ const Footer = () => {
                 <Mic className="w-5 h-5 text-accent-foreground" />
               </div>
               <span className="text-xl font-heading font-bold">
-                EchoCoach
+                Sharpen
               </span>
             </div>
             <p className="text-primary-foreground/80 mb-6 leading-relaxed">
@@ -136,10 +136,10 @@ const Footer = () => {
         <div className="border-t border-primary-foreground/20 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-primary-foreground/60 text-sm">
-              © {currentYear} EchoCoach. All rights reserved.
+              © {currentYear} Sharpen. All rights reserved.
             </p>
             <p className="text-primary-foreground/60 text-sm">
-              Enterprise-grade security • HIPAA compliant • SOC 2 certified
+              Used by Teams at TechFlow
             </p>
           </div>
         </div>

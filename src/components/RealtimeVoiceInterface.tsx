@@ -10,7 +10,11 @@ import { useToast } from '@/components/ui/use-toast';
 import AudioDiagnostics from './AudioDiagnostics';
 import { audioDebugger } from '@/utils/AudioDebugger';
 
-const RealtimeVoiceInterface = () => {
+interface RealtimeVoiceInterfaceProps {
+  category?: 'healthcare' | 'customer-service' | 'compliance-hr';
+}
+
+const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
   const { toast } = useToast();
   const [textInput, setTextInput] = useState('');
   const [showLogs, setShowLogs] = useState(false);
@@ -123,7 +127,7 @@ const RealtimeVoiceInterface = () => {
                   'bg-gray-400'
                 }`}></div>
                 <span className="font-medium">
-                  {isConnected ? 'Connected to EchoCoach AI' : 
+                  {isConnected ? 'Connected to Sharpen AI' : 
                    isConnecting ? 'Connecting...' : 
                    'Disconnected'}
                 </span>

@@ -4,19 +4,19 @@ import { Star, Quote, Shield, Award, Users } from "lucide-react";
 const SocialProofSection = () => {
   const testimonials = [
     {
-      quote: "EchoCoach helped our agents reduce onboarding time by 25% while improving customer satisfaction scores.",
+      quote: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
       author: "Sarah Chen",
       title: "Head of Customer Success",
       company: "TechFlow Solutions"
     },
     {
-      quote: "The realistic scenarios and immediate feedback transformed how we train our healthcare staff on difficult conversations.",
+      quote: "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
       author: "Dr. Michael Rodriguez",
       title: "Training Director",
       company: "Regional Medical Center"
     },
     {
-      quote: "Finally, a tool that lets our HR team practice sensitive conversations before they happen in real life.",
+      quote: "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
       author: "Jennifer Walsh",
       title: "VP of Human Resources",
       company: "Global Industries"
@@ -24,9 +24,9 @@ const SocialProofSection = () => {
   ];
 
   const trustBadges = [
-    { icon: Shield, label: "HIPAA Compliant" },
-    { icon: Award, label: "SOC 2 Certified" },
-    { icon: Users, label: "Enterprise Ready" }
+    { icon: Shield, label: "AI-Powered" },
+    { icon: Award, label: "Real-Time Coaching" },
+    { icon: Users, label: "Used by Teams at TechFlow" }
   ];
 
   const companyLogos = [
@@ -46,7 +46,7 @@ const SocialProofSection = () => {
             Trusted by Forward-Thinking Teams
           </h2>
           <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-            Organizations across customer experience, healthcare, and HR are already using EchoCoach 
+            Organizations across customer experience, healthcare, and HR are already using Sharpen 
             to transform their training programs.
           </p>
         </div>
