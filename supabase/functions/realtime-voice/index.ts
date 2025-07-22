@@ -8,52 +8,71 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  console.log("Edge function started, processing request...");
+  console.log("🚀 Edge function started, method:", req.method);
   
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    console.log("Handling CORS preflight request");
+    console.log("✅ Handling CORS preflight request");
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Check for OpenAI API key first
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    console.error("❌ OPENAI_API_KEY environment variable not found");
+    return new Response(JSON.stringify({
+      error: "OpenAI API key not configured. Please check your environment variables."
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
+  console.log("✅ OpenAI API key found");
+
+  // Check for WebSocket upgrade
   const { headers } = req;
   const upgradeHeader = headers.get("upgrade") || "";
 
   if (upgradeHeader.toLowerCase() !== "websocket") {
-    console.log("Non-WebSocket request received");
-    return new Response("Expected WebSocket connection", { status: 400 });
+    console.log("ℹ️ Non-WebSocket request received, returning basic health check");
+    return new Response(JSON.stringify({
+      status: "healthy",
+      message: "Realtime voice edge function is running",
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 
   try {
-    console.log("Attempting to upgrade to WebSocket...");
+    console.log("🔄 Attempting to upgrade to WebSocket...");
     const { socket, response } = Deno.upgradeWebSocket(req);
     
     let openAISocket: WebSocket | null = null;
     let sessionConfigured = false;
+    let connectionTimeout: number | null = null;
 
     socket.onopen = async () => {
-      console.log("Client WebSocket connected successfully");
+      console.log("🟢 Client WebSocket connected successfully");
       
-      try {
-        // Get OpenAI API key
-        const apiKey = Deno.env.get('OPENAI_API_KEY');
-        if (!apiKey) {
-          console.error('OPENAI_API_KEY environment variable not found');
-          socket.send(JSON.stringify({
-            type: "error",
-            error: "OpenAI API key not configured. Please check your environment variables."
-          }));
-          return;
-        }
+      // Set connection timeout
+      connectionTimeout = setTimeout(() => {
+        console.error("⏰ OpenAI connection timeout after 15 seconds");
+        socket.send(JSON.stringify({
+          type: "error",
+          error: "Connection to OpenAI timed out. Please try again."
+        }));
+        socket.close();
+      }, 15000);
 
-        console.log("OpenAI API key found, creating connection...");
+      try {
+        console.log("🔗 Creating connection to OpenAI Realtime API...");
         
-        // Connect to OpenAI Realtime API with updated authentication
+        // Use the correct OpenAI Realtime API endpoint
         const wsUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
+        console.log("📡 Connecting to OpenAI:", wsUrl);
         
-        console.log("Connecting to OpenAI Realtime API:", wsUrl);
-        
-        // Use the new authentication method with Authorization header
         openAISocket = new WebSocket(wsUrl, {
           headers: {
             "Authorization": `Bearer ${apiKey}`,
@@ -62,26 +81,28 @@ serve(async (req) => {
         });
 
         openAISocket.onopen = () => {
-          console.log("Successfully connected to OpenAI Realtime API");
-          // Wait for session.created before configuring
+          console.log("🟢 Successfully connected to OpenAI Realtime API");
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+            connectionTimeout = null;
+          }
         };
 
         openAISocket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log("Received from OpenAI:", data.type);
+            console.log("📨 Received from OpenAI:", data.type);
             
-            // Handle session creation - configure the session
+            // Handle session creation and configuration
             if (data.type === "session.created" && !sessionConfigured) {
-              console.log("Session created, sending configuration...");
+              console.log("⚙️ Session created, sending configuration...");
               sessionConfigured = true;
               
-              // Send session configuration
               const sessionConfig = {
                 type: "session.update",
                 session: {
                   modalities: ["text", "audio"],
-                  instructions: "You are an AI roleplay partner for professional communication training. When you receive roleplay scenarios, you must immediately introduce the scenario and begin the roleplay without asking setup questions. Always start roleplay sessions by explaining what scenario you're practicing, what roles each person will play, and then immediately begin the scenario. Never ask 'How can I help you?' or 'What would you like to practice?' - instead, take the lead and guide the conversation. Maintain character throughout and provide realistic responses.",
+                  instructions: "You are an AI roleplay partner for professional communication training. When you receive roleplay scenarios, immediately introduce the scenario and begin the roleplay without asking setup questions. Always start roleplay sessions by explaining what scenario you're practicing, what roles each person will play, and then immediately begin the scenario. Never ask 'How can I help you?' or 'What would you like to practice?' - instead, take the lead and guide the conversation. Maintain character throughout and provide realistic responses.",
                   voice: "alloy",
                   input_audio_format: "pcm16",
                   output_audio_format: "pcm16",
@@ -104,7 +125,7 @@ serve(async (req) => {
             
             // Handle session update confirmation
             if (data.type === "session.updated") {
-              console.log("Session configured successfully!");
+              console.log("✅ Session configured successfully!");
               
               // Tell the client we're ready
               socket.send(JSON.stringify({
@@ -116,7 +137,7 @@ serve(async (req) => {
             // Forward all messages from OpenAI to client
             socket.send(event.data);
           } catch (error) {
-            console.error("Error processing OpenAI message:", error);
+            console.error("❌ Error processing OpenAI message:", error);
             socket.send(JSON.stringify({
               type: "error",
               error: "Failed to process OpenAI response: " + error.message
@@ -125,15 +146,18 @@ serve(async (req) => {
         };
 
         openAISocket.onerror = (error) => {
-          console.error("OpenAI WebSocket error:", error);
+          console.error("❌ OpenAI WebSocket error:", error);
           socket.send(JSON.stringify({
             type: "error",
-            error: "OpenAI connection error. Please try again."
+            error: "OpenAI connection error. Please check your API key and try again."
           }));
         };
 
         openAISocket.onclose = (event) => {
-          console.log("OpenAI connection closed:", event.code, event.reason);
+          console.log("🔴 OpenAI connection closed:", event.code, event.reason);
+          if (connectionTimeout) {
+            clearTimeout(connectionTimeout);
+          }
           socket.send(JSON.stringify({
             type: "connection.closed",
             message: "OpenAI connection closed: " + (event.reason || "Unknown reason")
@@ -142,7 +166,10 @@ serve(async (req) => {
         };
 
       } catch (error) {
-        console.error("Error setting up OpenAI connection:", error);
+        console.error("❌ Error setting up OpenAI connection:", error);
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+        }
         socket.send(JSON.stringify({
           type: "error",
           error: "Failed to setup OpenAI connection: " + error.message
@@ -152,19 +179,19 @@ serve(async (req) => {
 
     socket.onmessage = (event) => {
       try {
-        console.log("Forwarding message from client to OpenAI");
+        console.log("📤 Forwarding message from client to OpenAI");
         
         if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
           openAISocket.send(event.data);
         } else {
-          console.warn("OpenAI socket not ready, readyState:", openAISocket?.readyState);
+          console.warn("⚠️ OpenAI socket not ready, readyState:", openAISocket?.readyState);
           socket.send(JSON.stringify({
             type: "error",
             error: "OpenAI connection not ready. Please wait or reconnect."
           }));
         }
       } catch (error) {
-        console.error("Error forwarding client message:", error);
+        console.error("❌ Error forwarding client message:", error);
         socket.send(JSON.stringify({
           type: "error",
           error: "Failed to forward message: " + error.message
@@ -173,26 +200,33 @@ serve(async (req) => {
     };
 
     socket.onclose = (event) => {
-      console.log("Client disconnected:", event.code, event.reason);
+      console.log("🔴 Client disconnected:", event.code, event.reason);
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
         openAISocket.close();
       }
     };
 
     socket.onerror = (error) => {
-      console.error("Client WebSocket error:", error);
+      console.error("❌ Client WebSocket error:", error);
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+      }
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
         openAISocket.close();
       }
     };
 
-    console.log("WebSocket setup complete, returning response");
+    console.log("✅ WebSocket setup complete, returning response");
     return response;
 
   } catch (error) {
-    console.error("Fatal error in edge function:", error);
+    console.error("💥 Fatal error in edge function:", error);
     return new Response(JSON.stringify({
-      error: "Internal server error: " + error.message
+      error: "Internal server error: " + error.message,
+      timestamp: new Date().toISOString()
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
