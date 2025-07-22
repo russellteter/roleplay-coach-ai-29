@@ -172,7 +172,7 @@ export const useRealtimeVoice = () => {
 
             case 'error':
               console.error('Realtime API error:', data.error);
-              setConnectionError(data.error || 'Connection error');
+              setConnectionError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
               setIsConnected(false);
               setIsConnecting(false);
               break;
@@ -240,7 +240,7 @@ export const useRealtimeVoice = () => {
         role: 'system',
         content: [
           {
-            type: 'input_text',
+            type: 'text',
             text: scenario.prompt
           }
         ]
@@ -255,7 +255,7 @@ export const useRealtimeVoice = () => {
         role: 'assistant',
         content: [
           {
-            type: 'input_text',
+            type: 'text',
             text: scenario.openingMessage
           }
         ]
@@ -321,7 +321,7 @@ export const useRealtimeVoice = () => {
         role: 'user',
         content: [
           {
-            type: 'input_text',
+            type: 'text',
             text
           }
         ]
