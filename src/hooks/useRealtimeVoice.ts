@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -28,6 +29,7 @@ export const useRealtimeVoice = () => {
   const gainNodeRef = useRef<GainNode | null>(null);
   const retryCountRef = useRef(0);
   const maxRetries = 3;
+  const scenarioOpeningSentRef = useRef(false);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -57,7 +59,6 @@ export const useRealtimeVoice = () => {
       // Resume audio context if suspended
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
-        audioDebugger.log("AudioContext resumed");
       }
       
       // Initialize audio queue
@@ -104,6 +105,65 @@ export const useRealtimeVoice = () => {
     }
   };
 
+  const sendScenarioOpening = useCallback((scenario: Scenario) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      audioDebugger.log("❌ Cannot send scenario opening - WebSocket not connected");
+      return;
+    }
+
+    if (scenarioOpeningSentRef.current) {
+      audioDebugger.log("⚠️ Scenario opening already sent, skipping");
+      return;
+    }
+
+    audioDebugger.log(`🎭 Sending scenario opening for: ${scenario.title}`);
+    scenarioOpeningSentRef.current = true;
+    
+    // Send system message with clear instructions for immediate response
+    const systemEvent = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'system',
+        content: [
+          {
+            type: 'text',
+            text: `${scenario.prompt}
+
+CRITICAL INSTRUCTION: You must immediately start speaking when this conversation begins. Do not wait for the user to speak first. Begin by saying exactly: "${scenario.openingMessage}"
+
+Then explain the scenario and your role clearly. Be proactive and engaging. The user is expecting YOU to start the conversation immediately.`
+          }
+        ]
+      }
+    };
+
+    // Send a direct trigger that tells the AI to start speaking immediately
+    const triggerEvent = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `Please start the ${scenario.title} roleplay scenario now. Begin speaking immediately with your opening message.`
+          }
+        ]
+      }
+    };
+
+    // Send the events
+    wsRef.current.send(JSON.stringify(systemEvent));
+    setTimeout(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(triggerEvent));
+        wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+        audioDebugger.log("✅ Scenario opening messages sent, AI should start speaking");
+      }
+    }, 500); // Small delay to ensure system message is processed first
+  }, []);
+
   const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
@@ -111,6 +171,7 @@ export const useRealtimeVoice = () => {
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
+      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
       
       // Set the scenario immediately
       if (scenario) {
@@ -171,14 +232,6 @@ export const useRealtimeVoice = () => {
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
-              
-              // Start scenario immediately if we have one
-              if (scenario) {
-                audioDebugger.log(`🎭 Starting scenario: ${scenario.title}`);
-                setTimeout(() => {
-                  sendScenarioOpening(scenario);
-                }, 500);
-              }
               break;
 
             case 'session.created':
@@ -187,6 +240,14 @@ export const useRealtimeVoice = () => {
 
             case 'session.updated':
               audioDebugger.log('✅ Session configuration updated');
+              
+              // Start scenario immediately after session is fully configured
+              if (scenario && !scenarioOpeningSentRef.current) {
+                audioDebugger.log(`🎭 Session ready, starting scenario: ${scenario.title}`);
+                setTimeout(() => {
+                  sendScenarioOpening(scenario);
+                }, 1000); // Give a moment for session to fully settle
+              }
               break;
 
             case 'input_audio_buffer.speech_started':
@@ -302,6 +363,7 @@ export const useRealtimeVoice = () => {
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
+        scenarioOpeningSentRef.current = false;
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
@@ -328,50 +390,7 @@ export const useRealtimeVoice = () => {
       setIsConnected(false);
       setIsConnecting(false);
     }
-  }, []);
-
-  const sendScenarioOpening = useCallback((scenario: Scenario) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      audioDebugger.log("Cannot send scenario opening - WebSocket not connected");
-      return;
-    }
-
-    audioDebugger.log(`🎭 Sending scenario opening for: ${scenario.title}`);
-    
-    // Send system message with scenario context
-    const systemEvent = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'system',
-        content: [
-          {
-            type: 'text',
-            text: `${scenario.prompt}\n\nIMPORTANT: Start immediately by saying: "${scenario.openingMessage}"`
-          }
-        ]
-      }
-    };
-
-    // Send user trigger
-    const userEvent = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Begin the roleplay scenario: ${scenario.title}`
-          }
-        ]
-      }
-    };
-
-    wsRef.current.send(JSON.stringify(systemEvent));
-    wsRef.current.send(JSON.stringify(userEvent));
-    wsRef.current.send(JSON.stringify({ type: 'response.create' }));
-  }, []);
+  }, [sendScenarioOpening]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -475,6 +494,7 @@ export const useRealtimeVoice = () => {
     
     gainNodeRef.current = null;
     retryCountRef.current = 0;
+    scenarioOpeningSentRef.current = false;
     
     setIsConnected(false);
     setIsConnecting(false);
