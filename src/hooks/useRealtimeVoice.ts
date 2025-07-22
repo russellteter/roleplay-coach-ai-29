@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -269,7 +268,23 @@ export const useRealtimeVoice = () => {
 
     audioDebugger.log(`Sending scenario opening for: ${scenario.title}`);
     
-    // Send the scenario prompt as a system message
+    // Create enhanced system instruction that ensures immediate roleplay initiation
+    const systemInstruction = `CRITICAL INSTRUCTION OVERRIDE: You are about to begin a live voice roleplay scenario titled "${scenario.title}". 
+
+IMMEDIATE BEHAVIOR REQUIRED:
+1. Immediately speak your opening message aloud as your first response
+2. Do NOT ask setup questions like "Have you ever..." or "Tell me about..."
+3. Do NOT gather information or ask what the user wants to practice
+4. Begin the roleplay immediately and stay in character
+5. The user has already selected this scenario and is ready to practice
+
+Your first response must be the opening message, spoken aloud, followed by immediate roleplay engagement.
+
+SCENARIO CONTEXT: ${scenario.prompt}
+
+Now immediately begin by speaking this opening message: "${scenario.openingMessage}"`;
+
+    // Send the enhanced system message
     const systemEvent = {
       type: 'conversation.item.create',
       item: {
@@ -278,29 +293,29 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: scenario.prompt
+            text: systemInstruction
           }
         ]
       }
     };
 
-    // Send the opening message as an assistant message to trigger voice response
-    const openingEvent = {
+    // Send a user message to trigger the AI to begin speaking
+    const triggerEvent = {
       type: 'conversation.item.create',
       item: {
         type: 'message',
-        role: 'assistant',
+        role: 'user',
         content: [
           {
             type: 'text',
-            text: scenario.openingMessage
+            text: `I'm ready to begin the ${scenario.title} roleplay scenario. Please start now.`
           }
         ]
       }
     };
 
     wsRef.current.send(JSON.stringify(systemEvent));
-    wsRef.current.send(JSON.stringify(openingEvent));
+    wsRef.current.send(JSON.stringify(triggerEvent));
     wsRef.current.send(JSON.stringify({ type: 'response.create' }));
   }, []);
 
