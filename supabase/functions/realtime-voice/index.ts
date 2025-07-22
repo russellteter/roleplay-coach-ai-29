@@ -16,19 +16,6 @@ serve(async (req) => {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // Basic health check endpoint
-    if (req.url.includes('/health') || req.method === 'GET') {
-      console.log("💚 Health check requested");
-      return new Response(JSON.stringify({
-        status: "healthy",
-        message: "Realtime voice edge function is running",
-        timestamp: new Date().toISOString(),
-        hasOpenAIKey: !!Deno.env.get('OPENAI_API_KEY')
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     // Check for OpenAI API key first
     const apiKey = Deno.env.get('OPENAI_API_KEY');
     if (!apiKey) {
@@ -43,6 +30,35 @@ serve(async (req) => {
     }
 
     console.log("✅ OpenAI API key found");
+
+    // Handle health check requests - both GET and POST with action: 'health'
+    let isHealthCheck = false;
+    
+    if (req.method === 'GET' && (req.url.includes('/health') || req.url.endsWith('realtime-voice'))) {
+      isHealthCheck = true;
+    } else if (req.method === 'POST') {
+      try {
+        const body = await req.json();
+        if (body && body.action === 'health') {
+          isHealthCheck = true;
+        }
+      } catch (e) {
+        // Not JSON or no action field, continue with WebSocket logic
+        console.log("📝 POST request without valid JSON body, checking for WebSocket upgrade");
+      }
+    }
+
+    if (isHealthCheck) {
+      console.log("💚 Health check requested");
+      return new Response(JSON.stringify({
+        status: "healthy",
+        message: "Realtime voice edge function is running",
+        timestamp: new Date().toISOString(),
+        hasOpenAIKey: !!apiKey
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
     // Check for WebSocket upgrade
     const { headers } = req;
