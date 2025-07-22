@@ -4,7 +4,7 @@ import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAu
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
 
-interface RealtimeMessage {
+export interface RealtimeMessage {
   type: string;
   [key: string]: any;
 }
@@ -26,6 +26,7 @@ export const useRealtimeVoice = () => {
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -37,28 +38,41 @@ export const useRealtimeVoice = () => {
     return bytes;
   };
 
-  const initializeAudioContext = async () => {
+  const initializeAudioContext = async (): Promise<void> => {
     try {
-      audioDebugger.log("Initializing audio context...");
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      audioDebugger.log("Initializing audio context with user interaction...");
+      
+      // Create AudioContext with proper sample rate
+      audioContextRef.current = new AudioContext({ 
+        sampleRate: 24000,
+        latencyHint: 'interactive'
+      });
+      
+      // Create gain node for volume control
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.connect(audioContextRef.current.destination);
+      gainNodeRef.current.gain.value = 0.8; // Default volume
       
       audioDebugger.debugAudioContext(audioContextRef.current);
       
-      // Resume audio context if suspended
+      // Resume audio context if suspended (required by browser security)
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
-        audioDebugger.log("AudioContext resumed during initialization");
+        audioDebugger.log("AudioContext resumed after user interaction");
       }
       
+      // Initialize audio queue with gain node
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
-      audioDebugger.log("Audio context initialized successfully");
+      audioQueueRef.current.setVolume(0.8);
+      
+      audioDebugger.log("Audio context initialized successfully with gain control");
     } catch (error) {
       audioDebugger.error("Failed to initialize audio context", error);
       throw new Error("Failed to initialize audio system");
     }
   };
 
-  const connect = useCallback(async (scenario?: Scenario) => {
+  const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
     try {
       audioDebugger.log("Starting connection process...");
       setIsConnecting(true);
@@ -69,10 +83,11 @@ export const useRealtimeVoice = () => {
       // Set the selected scenario immediately
       if (scenario) {
         setSelectedScenario(scenario);
+        setCurrentScenario(scenario);
         audioDebugger.log(`Selected scenario: ${scenario.title}`);
       }
       
-      // Initialize audio system
+      // Initialize audio system with user interaction
       await initializeAudioContext();
 
       // Connect to realtime WebSocket
@@ -114,7 +129,6 @@ export const useRealtimeVoice = () => {
               
               // Set current scenario and send opening if we have one
               if (selectedScenario) {
-                setCurrentScenario(selectedScenario);
                 audioDebugger.log(`Starting scenario: ${selectedScenario.title}`);
                 setTimeout(() => {
                   sendScenarioOpening(selectedScenario);
@@ -148,8 +162,14 @@ export const useRealtimeVoice = () => {
               break;
 
             case 'response.audio.delta':
-              if (data.delta && audioQueueRef.current) {
+              if (data.delta && audioQueueRef.current && audioContextRef.current) {
                 try {
+                  // Ensure audio context is running before playing audio
+                  if (audioContextRef.current.state === 'suspended') {
+                    await audioContextRef.current.resume();
+                    audioDebugger.log("AudioContext resumed for audio playback");
+                  }
+                  
                   const audioData = base64ToUint8Array(data.delta);
                   audioDebugger.debugAudioData(audioData, 'Audio Delta');
                   await audioQueueRef.current.addToQueue(audioData);
@@ -284,7 +304,7 @@ export const useRealtimeVoice = () => {
     wsRef.current.send(JSON.stringify({ type: 'response.create' }));
   }, []);
 
-  const startAudioCapture = useCallback(async () => {
+  const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
     }
@@ -292,9 +312,12 @@ export const useRealtimeVoice = () => {
     try {
       audioDebugger.log("Starting audio capture...");
       
-      // Ensure audio context is available
+      // Ensure audio context is available and resumed
       if (!audioContextRef.current) {
         await initializeAudioContext();
+      } else if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+        audioDebugger.log("AudioContext resumed for recording");
       }
       
       recorderRef.current = new AudioRecorder((audioData) => {
@@ -350,6 +373,16 @@ export const useRealtimeVoice = () => {
     wsRef.current.send(JSON.stringify({ type: 'response.create' }));
   }, []);
 
+  const setVolume = useCallback((volume: number) => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = volume;
+      audioDebugger.log(`Volume set to ${volume}`);
+    }
+    if (audioQueueRef.current) {
+      audioQueueRef.current.setVolume(volume);
+    }
+  }, []);
+
   const disconnect = useCallback(() => {
     audioDebugger.log("Disconnecting...");
     stopAudioCapture();
@@ -372,6 +405,8 @@ export const useRealtimeVoice = () => {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    
+    gainNodeRef.current = null;
     
     setIsConnected(false);
     setIsConnecting(false);
@@ -416,6 +451,7 @@ export const useRealtimeVoice = () => {
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
+    setVolume,
     disconnect,
     retryConnection
   };

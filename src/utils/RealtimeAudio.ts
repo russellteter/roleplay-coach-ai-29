@@ -101,18 +101,21 @@ export class AudioQueue {
   private audioContext: AudioContext;
   private currentSource: AudioBufferSourceNode | null = null;
   private gainNode: GainNode;
+  private volume = 0.8;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
     this.gainNode = audioContext.createGain();
     this.gainNode.connect(audioContext.destination);
+    this.gainNode.gain.value = this.volume;
     
     audioDebugger.log('AudioQueue initialized with gain node');
   }
 
   setVolume(volume: number) {
-    this.gainNode.gain.value = volume;
-    audioDebugger.log(`Volume set to ${volume}`);
+    this.volume = Math.max(0, Math.min(1, volume));
+    this.gainNode.gain.value = this.volume;
+    audioDebugger.log(`Volume set to ${this.volume}`);
   }
 
   async addToQueue(audioData: Uint8Array) {
@@ -148,13 +151,17 @@ export class AudioQueue {
       
       // Stop any currently playing audio
       if (this.currentSource) {
-        this.currentSource.stop();
+        try {
+          this.currentSource.stop();
+        } catch (e) {
+          // Ignore errors when stopping already stopped sources
+        }
         this.currentSource = null;
       }
       
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(this.gainNode); // Connect to gain node instead of destination
+      source.connect(this.gainNode);
       this.currentSource = source;
       
       source.onended = () => {
@@ -162,6 +169,13 @@ export class AudioQueue {
         this.currentSource = null;
         this.playNext();
       };
+      
+      // Handle potential audio playback errors
+      source.addEventListener('error', (error) => {
+        audioDebugger.error('Audio source error', error);
+        this.currentSource = null;
+        this.playNext();
+      });
       
       source.start(0);
       audioDebugger.log('Audio chunk started playing');
@@ -206,7 +220,11 @@ export class AudioQueue {
   stop() {
     audioDebugger.log('Stopping audio queue...');
     if (this.currentSource) {
-      this.currentSource.stop();
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore errors when stopping already stopped sources
+      }
       this.currentSource = null;
     }
     this.queue = [];
