@@ -141,82 +141,102 @@ const CompactVoiceInterface = () => {
         </Card>
       )}
 
-      {/* Connection Status */}
-      <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-lg">
-        <div className="flex items-center space-x-3">
-          <div className={`w-3 h-3 rounded-full ${
-            isConnected ? 'bg-green-500' : 
-            isConnecting ? 'bg-yellow-500 animate-pulse' : 
-            'bg-gray-400'
-          }`}></div>
-          <div className="flex flex-col">
-            <span className="font-medium text-foreground">
-              {isConnected ? 'Connected' : 
-               isConnecting ? 'Connecting...' : 
-               'Disconnected'}
-            </span>
-            {currentScenario && (
-              <span className="text-sm text-muted-foreground">
-                Scenario: {currentScenario.title}
+      {/* Scenario Instructions */}
+      {isConnected && currentScenario && (
+        <Card className="p-4 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+          <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2 flex items-center">
+            <Users className="w-4 h-4 mr-2" />
+            Your Role: {currentScenario.title}
+          </h4>
+          <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
+            {currentScenario.description}
+          </p>
+          <div className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+            💡 Start speaking when ready - the AI will play the other role and guide you through the scenario.
+          </div>
+        </Card>
+      )}
+
+      {/* Connection Status - Only show if connected or there's an error */}
+      {(isConnected || isConnecting || connectionError) && (
+        <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-lg">
+          <div className="flex items-center space-x-3">
+            <div className={`w-3 h-3 rounded-full ${
+              isConnected ? 'bg-green-500' : 
+              isConnecting ? 'bg-yellow-500 animate-pulse' : 
+              'bg-gray-400'
+            }`}></div>
+            <div className="flex flex-col">
+              <span className="font-medium text-foreground">
+                {isConnected ? 'Connected - Ready to practice!' : 
+                 isConnecting ? 'Connecting...' : 
+                 'Disconnected'}
               </span>
-            )}
-            {connectionError && (
-              <span className="text-sm text-destructive">
-                Error: {connectionError}
-              </span>
+              {currentScenario && isConnected && (
+                <span className="text-sm text-muted-foreground">
+                  Active scenario: {currentScenario.title}
+                </span>
+              )}
+              {connectionError && (
+                <span className="text-sm text-destructive">
+                  Error: {connectionError}
+                </span>
+              )}
+            </div>
+            {isUserSpeaking && (
+              <div className="flex items-center text-green-500 ml-4">
+                <Mic className="w-4 h-4 mr-1" />
+                <span className="text-sm">Speaking</span>
+              </div>
             )}
           </div>
-          {isUserSpeaking && (
-            <div className="flex items-center text-green-500 ml-4">
-              <Mic className="w-4 h-4 mr-1" />
-              <span className="text-sm">Speaking</span>
-            </div>
+          
+          {isConnected && (
+            <Button onClick={disconnect} variant="destructive" size="sm">
+              <PhoneOff className="w-4 h-4 mr-2" />
+              End Session
+            </Button>
           )}
         </div>
-        
-        {!isConnected && !isConnecting ? (
-          <Button 
-            onClick={handleConnect} 
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            size="sm"
-          >
-            <Phone className="w-4 h-4 mr-2" />
-            Connect
-          </Button>
-        ) : isConnecting ? (
-          <Button disabled size="sm" className="bg-muted">
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Connecting...
-          </Button>
-        ) : (
-          <Button onClick={disconnect} variant="destructive" size="sm">
-            <PhoneOff className="w-4 h-4 mr-2" />
-            Disconnect
-          </Button>
-        )}
-      </div>
+      )}
 
       {/* Voice Controls */}
       {isConnected && (
         <div className="space-y-4">
+          {/* Microphone Status Banner */}
+          <div className="text-center p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <div className="flex items-center justify-center space-x-2 mb-2">
+              <div className={`w-3 h-3 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+              <span className="font-medium text-green-800 dark:text-green-200">
+                {isRecording ? 'Listening - Speak now!' : 'Microphone ready - Click to start speaking'}
+              </span>
+            </div>
+            {!isRecording && (
+              <p className="text-sm text-green-700 dark:text-green-300">
+                The AI will hear you and respond naturally in voice
+              </p>
+            )}
+          </div>
+
           <div className="flex items-center justify-center space-x-4">
             <Button
               onClick={isRecording ? stopAudioCapture : handleStartAudio}
+              size="lg"
               className={`${
                 isRecording
-                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg'
               }`}
             >
               {isRecording ? (
                 <>
-                  <MicOff className="w-4 h-4 mr-2" />
-                  Stop
+                  <MicOff className="w-5 h-5 mr-2" />
+                  Stop Speaking
                 </>
               ) : (
                 <>
-                  <Mic className="w-4 h-4 mr-2" />
-                  Start Mic
+                  <Mic className="w-5 h-5 mr-2" />
+                  Start Speaking
                 </>
               )}
             </Button>
@@ -225,7 +245,7 @@ const CompactVoiceInterface = () => {
               {isAISpeaking ? (
                 <div className="flex items-center text-blue-500">
                   <Volume2 className="w-4 h-4 mr-1" />
-                  <span>AI Speaking</span>
+                  <span>AI Responding</span>
                   <div className="ml-2 flex space-x-1">
                     <div className="w-1 h-3 bg-blue-500 animate-pulse"></div>
                     <div className="w-1 h-2 bg-blue-500 animate-pulse" style={{animationDelay: '0.1s'}}></div>
@@ -235,7 +255,7 @@ const CompactVoiceInterface = () => {
               ) : (
                 <div className="flex items-center text-muted-foreground">
                   <VolumeX className="w-4 h-4 mr-1" />
-                  <span>AI Silent</span>
+                  <span>AI Ready</span>
                 </div>
               )}
             </div>
@@ -259,47 +279,62 @@ const CompactVoiceInterface = () => {
             </Button>
           </div>
 
-          {/* Live Conversation */}
-          {(transcript || aiResponse) && (
-            <div className="space-y-3">
-              {transcript && (
-                <div className="p-3 bg-secondary/30 border border-secondary/50 rounded-lg">
-                  <div className="flex items-center mb-2">
-                    <MessageSquare className="w-4 h-4 mr-2 text-secondary-foreground" />
-                    <span className="text-sm font-medium text-secondary-foreground">You said:</span>
-                  </div>
-                  <p className="text-sm text-secondary-foreground">
-                    {transcript}
-                  </p>
-                </div>
-              )}
-              {aiResponse && (
-                <div className="p-3 bg-primary/10 border border-primary/30 rounded-lg">
-                  <div className="flex items-center mb-2">
-                    <Volume2 className="w-4 h-4 mr-2 text-primary" />
-                    <span className="text-sm font-medium text-foreground">
-                      {currentScenario ? 'AI Coach' : 'AI Response'}:
-                    </span>
-                  </div>
-                  <p className="text-sm text-foreground">
-                    {aiResponse}
-                  </p>
-                </div>
+          {/* Live Conversation Transcript */}
+          <Card className="p-4">
+            <h4 className="font-medium text-foreground mb-3 flex items-center">
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Conversation Transcript
+            </h4>
+            
+            <div className="space-y-3 max-h-60 overflow-y-auto">
+              {!transcript && !aiResponse ? (
+                <p className="text-sm text-muted-foreground italic text-center py-4">
+                  Conversation will appear here as you speak...
+                </p>
+              ) : (
+                <>
+                  {transcript && (
+                    <div className="p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+                      <div className="flex items-center mb-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                        <span className="text-sm font-medium text-green-800 dark:text-green-200">You:</span>
+                      </div>
+                      <p className="text-sm text-green-800 dark:text-green-200">
+                        {transcript}
+                      </p>
+                    </div>
+                  )}
+                  {aiResponse && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                      <div className="flex items-center mb-2">
+                        <Volume2 className="w-4 h-4 mr-2 text-blue-600" />
+                        <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                          {currentScenario ? 'AI Coach' : 'AI'} (spoken aloud):
+                        </span>
+                      </div>
+                      <p className="text-sm text-blue-800 dark:text-blue-200">
+                        {aiResponse}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-          )}
+          </Card>
         </div>
       )}
 
-      {/* Quick Tips */}
-      <div className="p-4 bg-muted/30 border border-muted rounded-xl">
-        <h4 className="font-medium text-foreground mb-2">💡 Try saying:</h4>
-        <ul className="text-sm text-muted-foreground space-y-1">
-          <li>• "Help me practice a difficult customer conversation"</li>
-          <li>• "I need feedback on my communication style"</li>
-          <li>• "Let's role-play a healthcare consultation"</li>
-        </ul>
-      </div>
+      {/* Quick Tips - Only show when not connected */}
+      {!isConnected && (
+        <div className="p-4 bg-muted/30 border border-muted rounded-xl">
+          <h4 className="font-medium text-foreground mb-2">💡 Choose a scenario above or try saying:</h4>
+          <ul className="text-sm text-muted-foreground space-y-1">
+            <li>• "Help me practice a difficult customer conversation"</li>
+            <li>• "I need feedback on my communication style"</li>
+            <li>• "Let's role-play a healthcare consultation"</li>
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
