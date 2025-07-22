@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, Send, Users, MessageSquare, AlertCircle, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, Send, Users, MessageSquare, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
@@ -22,12 +22,14 @@ const CompactVoiceInterface = () => {
     transcript,
     aiResponse,
     currentScenario,
+    selectedScenario,
     connectionError,
     connect,
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
-    disconnect
+    disconnect,
+    retryConnection
   } = useRealtimeVoice();
 
   // Use Supabase scenarios if available, fallback to static ones
@@ -54,8 +56,8 @@ const CompactVoiceInterface = () => {
     try {
       await connect(scenario);
       toast({
-        title: "Scenario Started",
-        description: `Beginning ${scenario.title} roleplay`,
+        title: "Scenario Starting",
+        description: `Preparing ${scenario.title} roleplay...`,
       });
     } catch (error) {
       toast({
@@ -89,10 +91,21 @@ const CompactVoiceInterface = () => {
     }
   };
 
+  const handleRetry = () => {
+    retryConnection();
+    toast({
+      title: "Retrying Connection",
+      description: "Attempting to reconnect...",
+    });
+  };
+
+  // Show scenario selection only if no scenario selected or fully disconnected
+  const showScenarioSelection = !selectedScenario && !isConnected && !isConnecting;
+
   return (
     <div className="w-full space-y-6">
       {/* Scenario Selection */}
-      {!isConnected && !isConnecting && (
+      {showScenarioSelection && (
         <Card className="p-6 bg-primary border-primary/20 shadow-xl">
           <h3 className="text-lg font-semibold text-primary-foreground mb-4 flex items-center">
             <Users className="w-5 h-5 mr-2" />
@@ -141,45 +154,50 @@ const CompactVoiceInterface = () => {
         </Card>
       )}
 
-      {/* Scenario Instructions */}
-      {isConnected && currentScenario && (
+      {/* Selected Scenario Instructions - Show immediately when scenario is selected */}
+      {selectedScenario && (
         <Card className="p-4 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
           <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2 flex items-center">
             <Users className="w-4 h-4 mr-2" />
-            Your Role: {currentScenario.title}
+            Your Role: {selectedScenario.title}
           </h4>
           <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
-            {currentScenario.description}
+            {selectedScenario.description}
           </p>
           <div className="text-xs text-blue-700 dark:text-blue-300 font-medium">
-            💡 Start speaking when ready - the AI will play the other role and guide you through the scenario.
+            💡 {isConnected 
+              ? "Start speaking when ready - the AI will play the other role and guide you through the scenario."
+              : "Connecting to voice system..."
+            }
           </div>
         </Card>
       )}
 
-      {/* Connection Status - Only show if connected or there's an error */}
-      {(isConnected || isConnecting || connectionError) && (
+      {/* Connection Status */}
+      {(selectedScenario || isConnected || isConnecting || connectionError) && (
         <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-lg">
           <div className="flex items-center space-x-3">
             <div className={`w-3 h-3 rounded-full ${
               isConnected ? 'bg-green-500' : 
               isConnecting ? 'bg-yellow-500 animate-pulse' : 
+              connectionError ? 'bg-red-500' :
               'bg-gray-400'
             }`}></div>
             <div className="flex flex-col">
               <span className="font-medium text-foreground">
                 {isConnected ? 'Connected - Ready to practice!' : 
                  isConnecting ? 'Connecting...' : 
+                 connectionError ? 'Connection Error' :
                  'Disconnected'}
               </span>
-              {currentScenario && isConnected && (
+              {selectedScenario && (
                 <span className="text-sm text-muted-foreground">
-                  Active scenario: {currentScenario.title}
+                  Selected scenario: {selectedScenario.title}
                 </span>
               )}
               {connectionError && (
                 <span className="text-sm text-destructive">
-                  Error: {connectionError}
+                  {connectionError}
                 </span>
               )}
             </div>
@@ -191,16 +209,24 @@ const CompactVoiceInterface = () => {
             )}
           </div>
           
-          {isConnected && (
-            <Button onClick={disconnect} variant="destructive" size="sm">
-              <PhoneOff className="w-4 h-4 mr-2" />
-              End Session
-            </Button>
-          )}
+          <div className="flex space-x-2">
+            {connectionError && !isConnecting && (
+              <Button onClick={handleRetry} variant="outline" size="sm">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry
+              </Button>
+            )}
+            {(isConnected || connectionError) && (
+              <Button onClick={disconnect} variant="destructive" size="sm">
+                <PhoneOff className="w-4 h-4 mr-2" />
+                End Session
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Voice Controls */}
+      {/* Voice Controls - Show when connected */}
       {isConnected && (
         <div className="space-y-4">
           {/* Microphone Status Banner */}
@@ -324,8 +350,8 @@ const CompactVoiceInterface = () => {
         </div>
       )}
 
-      {/* Quick Tips - Only show when not connected */}
-      {!isConnected && (
+      {/* Quick Tips - Only show when no scenario selected */}
+      {showScenarioSelection && (
         <div className="p-4 bg-muted/30 border border-muted rounded-xl">
           <h4 className="font-medium text-foreground mb-2">💡 Choose a scenario above or try saying:</h4>
           <ul className="text-sm text-muted-foreground space-y-1">

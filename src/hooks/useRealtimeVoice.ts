@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { Scenario } from '@/utils/scenarioPrompts';
@@ -18,6 +17,7 @@ export const useRealtimeVoice = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -55,12 +55,17 @@ export const useRealtimeVoice = () => {
 
   const connect = useCallback(async (scenario?: Scenario) => {
     try {
+      console.log("Starting connection process...");
       setIsConnecting(true);
-      setIsConnected(false);
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
-      setCurrentScenario(scenario || null);
+      
+      // Set the selected scenario immediately
+      if (scenario) {
+        setSelectedScenario(scenario);
+        console.log("Selected scenario:", scenario.title);
+      }
       
       // Initialize audio system
       await initializeAudioContext();
@@ -75,7 +80,9 @@ export const useRealtimeVoice = () => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           console.error('Connection timeout');
           setConnectionError('Connection timeout after 15 seconds');
-          wsRef.current?.close();
+          if (wsRef.current) {
+            wsRef.current.close();
+          }
           setIsConnecting(false);
         }
       }, 15000);
@@ -100,11 +107,12 @@ export const useRealtimeVoice = () => {
               setIsConnecting(false);
               setConnectionError(null);
               
-              // If we have a scenario, send it after a brief delay
-              if (scenario) {
-                console.log('Starting scenario:', scenario.title);
+              // Set current scenario and send opening if we have one
+              if (selectedScenario) {
+                setCurrentScenario(selectedScenario);
+                console.log('Starting scenario:', selectedScenario.title);
                 setTimeout(() => {
-                  sendScenarioOpening(scenario);
+                  sendScenarioOpening(selectedScenario);
                 }, 1000);
               }
               break;
@@ -172,9 +180,14 @@ export const useRealtimeVoice = () => {
 
             case 'error':
               console.error('Realtime API error:', data.error);
-              setConnectionError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
-              setIsConnected(false);
+              const errorMessage = typeof data.error === 'object' && data.error.message 
+                ? data.error.message 
+                : typeof data.error === 'string' 
+                ? data.error 
+                : JSON.stringify(data.error);
+              setConnectionError(errorMessage);
               setIsConnecting(false);
+              // Don't disconnect immediately on error, let user decide
               break;
 
             case 'connection.closed':
@@ -199,8 +212,8 @@ export const useRealtimeVoice = () => {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        setIsConnected(false);
         setIsConnecting(false);
+        // Don't reset scenario on error
       };
 
       wsRef.current.onclose = (event) => {
@@ -214,6 +227,7 @@ export const useRealtimeVoice = () => {
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
+        // Don't reset scenario on close unless it was intentional
       };
 
     } catch (error) {
@@ -222,7 +236,7 @@ export const useRealtimeVoice = () => {
       setIsConnected(false);
       setIsConnecting(false);
     }
-  }, []);
+  }, [selectedScenario]);
 
   const sendScenarioOpening = useCallback((scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -363,8 +377,18 @@ export const useRealtimeVoice = () => {
     setTranscript('');
     setAiResponse('');
     setCurrentScenario(null);
+    setSelectedScenario(null);
     setConnectionError(null);
   }, [stopAudioCapture]);
+
+  const retryConnection = useCallback(() => {
+    if (selectedScenario) {
+      console.log("Retrying connection with scenario:", selectedScenario.title);
+      connect(selectedScenario);
+    } else {
+      connect();
+    }
+  }, [selectedScenario, connect]);
 
   useEffect(() => {
     return () => {
@@ -381,11 +405,13 @@ export const useRealtimeVoice = () => {
     transcript,
     aiResponse,
     currentScenario,
+    selectedScenario,
     connectionError,
     connect,
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
-    disconnect
+    disconnect,
+    retryConnection
   };
 };
