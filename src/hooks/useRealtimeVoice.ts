@@ -4,11 +4,10 @@ import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAu
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
 import { supabase } from '@/integrations/supabase/client';
-
-export interface RealtimeMessage {
-  type: string;
-  [key: string]: any;
-}
+import type {
+  ClientWebSocketEvent,
+  OpenAIWebSocketEvent,
+} from '@/types/realtimeEvents';
 
 // Simplified connection state enum
 enum ConnectionState {
@@ -124,7 +123,7 @@ export const useRealtimeVoice = () => {
   };
 
   // Promise-based message sending with acknowledgment
-  const sendAndAwaitAck = useCallback((event: any): Promise<void> => {
+  const sendAndAwaitAck = useCallback((event: ClientWebSocketEvent): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         reject(new Error('WebSocket not connected'));
@@ -185,7 +184,7 @@ export const useRealtimeVoice = () => {
       audioDebugger.log(`🎭 Starting scenario opening sequence for: ${scenario.title}`);
       
       // Step 1: Send system message with clear instructions
-      const systemEvent = {
+      const systemEvent: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
@@ -207,7 +206,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       audioDebugger.log("✅ System message sent and acknowledged");
 
       // Step 2: Send trigger message
-      const triggerEvent = {
+      const triggerEvent: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
@@ -225,7 +224,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       audioDebugger.log("✅ Trigger message sent and acknowledged");
 
       // Step 3: Request response
-      const responseEvent = { type: 'response.create' };
+      const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
       await sendAndAwaitAck(responseEvent);
       audioDebugger.log("✅ Response creation requested - AI should start speaking now!");
 
@@ -280,7 +279,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
       wsRef.current.onmessage = async (event) => {
         try {
-          const data: RealtimeMessage = JSON.parse(event.data);
+          const data: OpenAIWebSocketEvent = JSON.parse(event.data) as OpenAIWebSocketEvent;
           audioDebugger.log(`📨 ▷ GOT EVENT: ${data.type}`);
 
           switch (data.type) {
@@ -534,7 +533,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
 
     audioDebugger.log(`Sending text message: ${text}`);
-    const event = {
+    const event: ClientWebSocketEvent = {
       type: 'conversation.item.create',
       item: {
         type: 'message',
@@ -549,7 +548,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     };
 
     wsRef.current.send(JSON.stringify(event));
-    wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+    const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
+    wsRef.current.send(JSON.stringify(responseEvent));
   }, []);
 
   const setVolume = useCallback((volume: number) => {
@@ -598,7 +598,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
         audioContextRef.current = null;
       }
-      
+
       gainNodeRef.current = null;
       scenarioRef.current = null;
       
@@ -622,8 +622,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
   }, [stopAudioCapture]);
 
   const retryConnection = useCallback(() => {
-    handleRetry();
-  }, [handleRetry]);
 
   useEffect(() => {
     return () => {

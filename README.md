@@ -60,6 +60,9 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Running tests
+
+Use `npm test` to run the Node-based test harness. Set `WS_URL` if your realtime voice function runs on a different WebSocket URL.
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/e1ebfc55-81a2-43ef-ae53-9a59858c4eec) and click on Share -> Publish.
