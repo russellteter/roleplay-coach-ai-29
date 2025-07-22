@@ -269,7 +269,17 @@ export const useRealtimeVoice = () => {
 
     audioDebugger.log(`Sending scenario opening for: ${scenario.title}`);
     
-    // Send the scenario prompt as a system message
+    // Create the system instruction layer that overrides any step-by-step behavior
+    const systemInstructionLayer = `CRITICAL OVERRIDE: You must immediately begin this roleplay scenario by speaking the provided opening message aloud as your very first response. Do not ask setup questions, do not gather information first, and do not say "How can I help you?" or similar phrases. 
+
+ROLEPLAY INTRODUCTION PATTERN: Start by saying: "Hi there. This is a live role-play scenario designed to help you practice ${scenario.title}. In this exercise, I'll play the role of [your character from the scenario], and you'll play the role of [user's role from the scenario]. I'll describe the situation and then we'll begin. Just respond naturally as if this were a real conversation. If you have any quick questions before we begin, feel free to ask. Otherwise, I'll get us started now..."
+
+After this introduction, immediately deliver your opening message and stay in character throughout the conversation.
+
+SCENARIO DETAILS:
+${scenario.prompt}`;
+
+    // Send the enhanced system message with instruction override
     const systemEvent = {
       type: 'conversation.item.create',
       item: {
@@ -278,29 +288,29 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: scenario.prompt
+            text: systemInstructionLayer
           }
         ]
       }
     };
 
-    // Send the opening message as an assistant message to trigger voice response
-    const openingEvent = {
+    // Send user message requesting the roleplay to begin
+    const userEvent = {
       type: 'conversation.item.create',
       item: {
         type: 'message',
-        role: 'assistant',
+        role: 'user',
         content: [
           {
             type: 'text',
-            text: scenario.openingMessage
+            text: `Please begin the roleplay scenario: ${scenario.title}. Start with the introduction pattern and then deliver your opening message: "${scenario.openingMessage}"`
           }
         ]
       }
     };
 
     wsRef.current.send(JSON.stringify(systemEvent));
-    wsRef.current.send(JSON.stringify(openingEvent));
+    wsRef.current.send(JSON.stringify(userEvent));
     wsRef.current.send(JSON.stringify({ type: 'response.create' }));
   }, []);
 
