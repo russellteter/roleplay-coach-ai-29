@@ -12,8 +12,10 @@ const RealtimeVoiceInterface = () => {
   
   const {
     isConnected,
+    isConnecting,
     isRecording,
     isAISpeaking,
+    isUserSpeaking,
     transcript,
     aiResponse,
     connect,
@@ -83,16 +85,33 @@ const RealtimeVoiceInterface = () => {
       <Card className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+            <div className={`w-3 h-3 rounded-full ${
+              isConnected ? 'bg-green-500' : 
+              isConnecting ? 'bg-yellow-500 animate-pulse' : 
+              'bg-gray-400'
+            }`}></div>
             <span className="font-medium">
-              {isConnected ? 'Connected to EchoCoach AI' : 'Disconnected'}
+              {isConnected ? 'Connected to EchoCoach AI' : 
+               isConnecting ? 'Connecting...' : 
+               'Disconnected'}
             </span>
+            {isUserSpeaking && (
+              <div className="flex items-center text-green-600 ml-4">
+                <Mic className="w-4 h-4 mr-1" />
+                <span className="text-sm">You're speaking</span>
+              </div>
+            )}
           </div>
           
-          {!isConnected ? (
+          {!isConnected && !isConnecting ? (
             <Button onClick={handleConnect} className="bg-primary hover:bg-primary/90">
               <Phone className="w-4 h-4 mr-2" />
               Connect
+            </Button>
+          ) : isConnecting ? (
+            <Button disabled className="bg-gray-400">
+              <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+              Connecting...
             </Button>
           ) : (
             <Button onClick={disconnect} variant="destructive">

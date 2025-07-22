@@ -8,8 +8,10 @@ interface RealtimeMessage {
 
 export const useRealtimeVoice = () => {
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   
@@ -18,9 +20,24 @@ export const useRealtimeVoice = () => {
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
+  // Helper function to convert base64 to Uint8Array
+  const base64ToUint8Array = (base64: string): Uint8Array => {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  };
+
   const connect = useCallback(async () => {
     try {
-      // Initialize audio context
+      setIsConnecting(true);
+      setIsConnected(false);
+      setAiResponse('');
+      setTranscript('');
+      
+      // Initialize audio context and queue
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
 
@@ -29,31 +46,50 @@ export const useRealtimeVoice = () => {
       console.log('Connecting to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
 
+      // Set a connection timeout
+      const connectionTimeout = setTimeout(() => {
+        if (wsRef.current?.readyState !== WebSocket.OPEN) {
+          console.error('Connection timeout');
+          wsRef.current?.close();
+          setIsConnecting(false);
+          throw new Error('Connection timeout');
+        }
+      }, 15000);
+
       wsRef.current.onopen = () => {
-        console.log('Connected to realtime voice');
-        setIsConnected(true);
+        console.log('WebSocket connected to Supabase edge function');
+        clearTimeout(connectionTimeout);
+        // Don't set connected yet - wait for OpenAI connection confirmation
       };
 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: RealtimeMessage = JSON.parse(event.data);
-          console.log('Received message:', data.type);
+          console.log('Received message:', data.type, data);
 
           switch (data.type) {
+            case 'connection.established':
+              console.log('OpenAI connection established');
+              setIsConnected(true);
+              setIsConnecting(false);
+              break;
+
             case 'session.created':
-              console.log('Session created successfully');
+              console.log('OpenAI session created');
               break;
 
             case 'session.updated':
-              console.log('Session updated successfully');
+              console.log('Session configuration updated');
               break;
 
             case 'input_audio_buffer.speech_started':
-              setIsRecording(true);
+              console.log('User started speaking');
+              setIsUserSpeaking(true);
               break;
 
             case 'input_audio_buffer.speech_stopped':
-              setIsRecording(false);
+              console.log('User stopped speaking');
+              setIsUserSpeaking(false);
               break;
 
             case 'conversation.item.input_audio_transcription.completed':
@@ -62,31 +98,48 @@ export const useRealtimeVoice = () => {
 
             case 'response.audio.delta':
               if (data.delta && audioQueueRef.current) {
-                // Convert base64 to Uint8Array
-                const binaryString = atob(data.delta);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                  bytes[i] = binaryString.charCodeAt(i);
-                }
-                await audioQueueRef.current.addToQueue(bytes);
+                const audioData = base64ToUint8Array(data.delta);
+                await audioQueueRef.current.addToQueue(audioData);
                 setIsAISpeaking(true);
               }
               break;
 
             case 'response.audio.done':
+              console.log('AI finished speaking');
               setIsAISpeaking(false);
               break;
 
-            case 'response.text.delta':
-              setAiResponse(prev => prev + (data.delta || ''));
+            case 'response.audio_transcript.delta':
+              if (data.delta) {
+                setAiResponse(prev => prev + data.delta);
+              }
               break;
 
-            case 'response.text.done':
-              // Response text is complete
+            case 'response.audio_transcript.done':
+              console.log('Transcript completed');
+              break;
+
+            case 'input_audio_buffer.committed':
+              console.log('Audio buffer committed');
+              break;
+
+            case 'response.created':
+              console.log('Response started');
+              setAiResponse('');
+              break;
+
+            case 'response.done':
+              console.log('Response completed');
               break;
 
             case 'error':
               console.error('Realtime API error:', data.error);
+              setIsConnected(false);
+              setIsConnecting(false);
+              throw new Error(data.error || 'Connection error');
+
+            case 'connection.closed':
+              console.log('OpenAI connection closed');
               setIsConnected(false);
               break;
 
@@ -94,25 +147,31 @@ export const useRealtimeVoice = () => {
               console.log('Unhandled message type:', data.type);
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          console.error('Error parsing message:', error);
         }
       };
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
+        clearTimeout(connectionTimeout);
         setIsConnected(false);
+        setIsConnecting(false);
       };
 
       wsRef.current.onclose = (event) => {
         console.log('WebSocket closed:', event.code, event.reason);
+        clearTimeout(connectionTimeout);
         setIsConnected(false);
+        setIsConnecting(false);
         setIsRecording(false);
         setIsAISpeaking(false);
+        setIsUserSpeaking(false);
       };
 
     } catch (error) {
       console.error('Error connecting to realtime voice:', error);
       setIsConnected(false);
+      setIsConnecting(false);
       throw error;
     }
   }, []);
@@ -198,8 +257,10 @@ export const useRealtimeVoice = () => {
 
   return {
     isConnected,
+    isConnecting,
     isRecording,
     isAISpeaking,
+    isUserSpeaking,
     transcript,
     aiResponse,
     connect,
