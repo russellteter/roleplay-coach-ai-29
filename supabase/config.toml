@@ -1,4 +1,1 @@
 project_id = "xirbkztlbixvacekhzyv"
-
-[functions.realtime-voice]
-verify_jwt = false
