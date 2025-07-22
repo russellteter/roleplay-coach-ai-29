@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -134,6 +133,7 @@ export const useRealtimeVoice = () => {
   const [retryAttempts, setRetryAttempts] = useState(0);
   const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
   const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const scenarioOpeningSentRef = useRef<boolean>(false);
 
   // Phase 1: Structured logging helper
   const logEvent = useCallback((direction: '▷' | '◁', event: string, data?: any) => {
@@ -183,7 +183,6 @@ export const useRealtimeVoice = () => {
     }
   };
 
-  // Phase 2: Sequence tracking for critical operations
   const sendAndAwaitResponse = useCallback((event: ClientWebSocketEvent, expectedResponseType?: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -226,7 +225,6 @@ export const useRealtimeVoice = () => {
     });
   }, [state.sequenceId, logEvent]);
 
-  // Test edge function health before connecting
   const testEdgeFunctionHealth = async (): Promise<boolean> => {
     try {
       logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
@@ -314,6 +312,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       logEvent('▷', 'SCENARIO_RESPONSE_REQUESTED', 'Response creation requested');
 
       dispatch({ type: 'STARTED' });
+      scenarioOpeningSentRef.current = true;
       
     } catch (error) {
       logEvent('▷', 'SCENARIO_OPENING_ERROR', error);
@@ -321,7 +320,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
   }, [sendAndAwaitResponse, logEvent]);
 
-  // Phase 3: Connection health monitoring
   const startHealthCheck = useCallback(() => {
     if (healthCheckRef.current) {
       clearInterval(healthCheckRef.current);
@@ -375,6 +373,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       }
       setConnectionError(null);
       shouldReconnectRef.current = true;
+      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -433,8 +432,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY FOR SCENARIO');
               dispatch({ type: 'CONFIGURED' });
               
-              // Automatically start scenario if we have one - use ref to avoid race condition
-              if (scenarioRef.current) {
+              // Automatically start scenario if we have one and haven't sent it yet
+              if (scenarioRef.current && !scenarioOpeningSentRef.current) {
                 logEvent('▷', 'AUTO_START_SCENARIO', `Auto-starting scenario: ${scenarioRef.current.title}`);
                 await sendScenarioOpening(scenarioRef.current);
               }
@@ -555,6 +554,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
+        scenarioOpeningSentRef.current = false; // Reset scenario opening flag
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
@@ -696,6 +696,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       logEvent('▷', 'DISCONNECT_START', 'Disconnecting...');
       stopAudioCapture();
       shouldReconnectRef.current = false;
+      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
