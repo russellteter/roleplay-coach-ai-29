@@ -1,3 +1,5 @@
+
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -68,12 +70,12 @@ serve(async (req) => {
             console.log("Session created, sending configuration...");
             sessionCreated = true;
             
-            // Send session configuration optimized for immediate roleplay initiation
+            // Send session configuration optimized for voice roleplay
             const sessionConfig = {
               type: "session.update",
               session: {
                 modalities: ["text", "audio"],
-                instructions: "You are Sharpen, an AI roleplay partner for professional communication training. When you receive scenario instructions, immediately begin the roleplay by speaking your opening message and staying in character. Do not ask setup questions or gather information first. The user has already selected their scenario and is ready to practice. Provide natural, realistic responses as the character described in the scenario.",
+                instructions: "You are an AI roleplay partner for professional communication training. You will receive specific roleplay scenarios and should embody the characters described. Maintain character throughout the conversation while providing natural, realistic responses. When the roleplay concludes, you may briefly step out of character to provide constructive feedback if appropriate.",
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -178,3 +180,4 @@ serve(async (req) => {
 
   return response;
 });
+
