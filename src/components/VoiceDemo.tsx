@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +20,18 @@ const useCaseDescriptions = {
   'customer-support': 'Practice handling difficult customers, technical issues, and service complaints with empathy and efficiency.',
   'healthcare': 'Build empathy and clarity for patient interactions, sensitive conversations, and clinical communications.',
   'compliance-hr': 'Navigate sensitive workplace conversations, policy discussions, and compliance matters with confidence.'
+};
+
+const useCaseIcons = {
+  'customer-support': Headset,
+  'healthcare': Heart,
+  'compliance-hr': Scale,
+};
+
+const useCaseColors = {
+  'customer-support': 'bg-blue-500 text-white',
+  'healthcare': 'bg-green-500 text-white',
+  'compliance-hr': 'bg-purple-500 text-white',
 };
 
 const VoiceDemo = () => {
@@ -48,10 +60,13 @@ const VoiceDemo = () => {
 
   const { scenarios, loading: scenariosLoading } = useScenarioPrompts();
 
-  // Filter scenarios by selected use case
-  const filteredScenarios = scenarios.filter(scenario => 
-    scenario.category === selectedUseCase
-  ).slice(0, 4); // Only show 4 scenarios per use case
+  // Filter scenarios by selected use case - handle both naming conventions
+  const filteredScenarios = scenarios.filter(scenario => {
+    if (selectedUseCase === 'customer-support') {
+      return scenario.category === 'customer-support' || scenario.category === 'customer-service';
+    }
+    return scenario.category === selectedUseCase;
+  }).slice(0, 4); // Only show 4 scenarios per use case
 
   const requestAudioPermission = async () => {
     try {
@@ -86,12 +101,12 @@ const VoiceDemo = () => {
       await connect(scenario);
       toast({
         title: "Starting Voice Conversation",
-        description: `Beginning ${scenario.title} roleplay...`,
+        description: "You're now live with Sharpen. Speak naturally. Sharpen will talk back just like a real person.",
       });
     } catch (error) {
       toast({
         title: "Connection Failed",
-        description: "Could not start voice conversation. Please try again.",
+        description: "We couldn't connect. Please refresh and try again, or check your audio settings.",
         variant: "destructive",
       });
     }
@@ -127,6 +142,12 @@ const VoiceDemo = () => {
     setAudioPermissionGranted(false);
   };
 
+  const handleRetry = () => {
+    if (currentScenario) {
+      retryConnection();
+    }
+  };
+
   return (
     <div className="w-full space-y-8">
       {/* Header Section */}
@@ -139,22 +160,27 @@ const VoiceDemo = () => {
         </p>
       </div>
 
-      {/* Use Case Toggle */}
+      {/* Enhanced Use Case Toggle */}
       <div className="flex justify-center">
-        <div className="inline-flex bg-muted rounded-lg p-1">
-          {Object.entries(useCaseLabels).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setSelectedUseCase(key as UseCase)}
-              className={`px-6 py-2 rounded-md text-sm font-medium transition-all ${
-                selectedUseCase === key
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="inline-flex bg-muted rounded-xl p-2 gap-2">
+          {Object.entries(useCaseLabels).map(([key, label]) => {
+            const IconComponent = useCaseIcons[key as UseCase];
+            const isSelected = selectedUseCase === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setSelectedUseCase(key as UseCase)}
+                className={`px-6 py-3 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                  isSelected
+                    ? useCaseColors[key as UseCase] + ' shadow-md'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                }`}
+              >
+                <IconComponent className="w-4 h-4" />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -175,28 +201,37 @@ const VoiceDemo = () => {
               <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
               <p className="text-muted-foreground mt-2">Loading scenarios...</p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+          ) : filteredScenarios.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
               {filteredScenarios.map((scenario) => (
                 <Card
                   key={scenario.id}
-                  className="p-6 cursor-pointer hover:shadow-lg transition-all duration-200 hover:border-primary/30 group"
+                  className="p-6 cursor-pointer hover:shadow-lg transition-all duration-200 hover:border-primary/30 group rounded-xl border-2 hover:scale-[1.02]"
                   onClick={() => handleScenarioSelect(scenario)}
                 >
-                  <div className="space-y-3">
-                    <h4 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
                       {scenario.title}
                     </h4>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground leading-relaxed">
                       {scenario.description}
                     </p>
-                    <div className="flex items-center text-primary text-sm">
-                      <Play className="w-4 h-4 mr-2" />
-                      <span>Start Voice Conversation</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center text-primary text-sm font-medium">
+                        <Play className="w-4 h-4 mr-2" />
+                        <span>Start Voice Conversation</span>
+                      </div>
+                      <div className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                        Voice Practice
+                      </div>
                     </div>
                   </div>
                 </Card>
               ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No scenarios available for this use case.</p>
             </div>
           )}
         </div>
@@ -204,7 +239,7 @@ const VoiceDemo = () => {
 
       {/* Active Voice Demo */}
       {(isConnected || isConnecting || currentScenario) && (
-        <Card className="p-8 max-w-4xl mx-auto">
+        <Card className="p-8 max-w-4xl mx-auto rounded-xl">
           {/* Scenario Info */}
           {currentScenario && (
             <div className="text-center mb-6 pb-6 border-b">
@@ -304,7 +339,7 @@ const VoiceDemo = () => {
 
               {/* Live Transcript */}
               <div className="grid md:grid-cols-2 gap-4">
-                <Card className="p-4">
+                <Card className="p-4 rounded-lg">
                   <h4 className="font-medium mb-3 text-green-800">You said:</h4>
                   <div className="min-h-[100px] p-3 bg-green-50 rounded-lg">
                     <p className="text-sm text-green-800">
@@ -313,7 +348,7 @@ const VoiceDemo = () => {
                   </div>
                 </Card>
 
-                <Card className="p-4">
+                <Card className="p-4 rounded-lg">
                   <h4 className="font-medium mb-3 text-blue-800">AI responded:</h4>
                   <div className="min-h-[100px] p-3 bg-blue-50 rounded-lg">
                     <p className="text-sm text-blue-800">
@@ -325,38 +360,48 @@ const VoiceDemo = () => {
             </div>
           )}
 
-          {/* Error State */}
+          {/* Enhanced Error State */}
           {connectionError && (
-            <div className="text-center space-y-4">
-              <p className="text-red-600">{connectionError}</p>
-              <Button onClick={retryConnection} variant="outline">
-                Try Again
-              </Button>
+            <div className="text-center space-y-4 p-6 bg-red-50 rounded-lg border border-red-200">
+              <div className="text-red-600 font-medium">Connection Failed</div>
+              <p className="text-red-700 text-sm">We couldn't connect. Please refresh and try again, or check your audio settings.</p>
+              <div className="flex justify-center space-x-3">
+                <Button onClick={handleRetry} variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                  Try Again
+                </Button>
+                <Button onClick={resetDemo} variant="outline">
+                  Choose Different Scenario
+                </Button>
+              </div>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div className="flex justify-center space-x-3 mt-6 pt-6 border-t">
-            <Button onClick={resetDemo} variant="outline">
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Try Another Scenario
-            </Button>
-          </div>
+          {isConnected && (
+            <div className="flex justify-center space-x-3 mt-6 pt-6 border-t">
+              <Button onClick={resetDemo} variant="outline">
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Try Another Scenario
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
-      {/* Audio Permission Request */}
+      {/* Enhanced Audio Permission Request */}
       {!audioPermissionGranted && !isConnected && !currentScenario && (
-        <Card className="p-6 max-w-2xl mx-auto text-center">
-          <div className="space-y-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-              <Mic className="w-8 h-8 text-primary" />
+        <Card className="p-8 max-w-2xl mx-auto text-center rounded-xl border-2 border-primary/20">
+          <div className="space-y-6">
+            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+              <Mic className="w-10 h-10 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold">Enable Voice Features</h3>
-            <p className="text-muted-foreground">
-              Sharpen needs microphone access to provide voice-based roleplay training.
-            </p>
-            <Button onClick={requestAudioPermission} className="bg-primary hover:bg-primary/90">
+            <div className="space-y-2">
+              <h3 className="text-xl font-semibold">Enable Voice Features</h3>
+              <p className="text-muted-foreground">
+                Sharpen needs microphone access to provide voice-based roleplay training.
+              </p>
+            </div>
+            <Button onClick={requestAudioPermission} className="bg-primary hover:bg-primary/90 px-8 py-3">
               Enable Microphone
             </Button>
           </div>

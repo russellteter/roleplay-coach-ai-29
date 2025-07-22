@@ -1,6 +1,7 @@
+
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import RealtimeVoiceInterface from "@/components/RealtimeVoiceInterface";
+import VoiceDemo from "@/components/VoiceDemo";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, FileCheck, Scale, UserCheck } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -29,7 +30,7 @@ const ComplianceHR = () => {
       <Header />
       
       {/* Hero Demo Section */}
-      <section className="pt-24 pb-16 bg-gradient-subtle">
+      <section className="pt-24 pb-16 bg-gradient-to-br from-background via-background to-primary/5">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h1 className="text-5xl sm:text-6xl font-heading font-bold text-foreground mb-6">
@@ -43,24 +44,9 @@ const ComplianceHR = () => {
             </p>
           </div>
 
-          {/* Live Voice Demo */}
-          <div className="bg-blue-50/80 backdrop-blur-sm rounded-3xl p-8 mb-16 border border-blue-200/50">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              <div>
-                <h3 className="text-2xl font-heading font-bold text-blue-900 mb-4">
-                  Try Live Voice Demo
-                </h3>
-                <p className="text-blue-700 mb-6">
-                  These aren't easy conversations. Use Sharpen's voice demo to practice difficult scenarios and learn how to stay compliant, respectful, and effective.
-                </p>
-                <div className="text-sm text-blue-600 font-medium mb-4">
-                  Powered by OpenAI's ChatGPT in voice mode
-                </div>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 border border-blue-200/30">
-                <RealtimeVoiceInterface category="compliance-hr" />
-              </div>
-            </div>
+          {/* Use the unified VoiceDemo component with compliance focus */}
+          <div className="mb-16">
+            <VoiceDemo />
           </div>
 
           {/* Features Grid */}
