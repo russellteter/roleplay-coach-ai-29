@@ -21,7 +21,7 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: ['Inter', 'system-ui', 'sans-serif'],
-				heading: ['Outfit', 'system-ui', 'sans-serif'], // Bold modern headings
+				heading: ['Inter', 'system-ui', 'sans-serif'], // Clean, modern
 				body: ['Inter', 'system-ui', 'sans-serif'],
 			},
 			colors: {
