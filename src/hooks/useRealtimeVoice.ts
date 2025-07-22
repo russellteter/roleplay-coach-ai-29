@@ -24,8 +24,9 @@ export const useRealtimeVoice = () => {
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
 
-      // Connect to realtime WebSocket
+      // Connect to realtime WebSocket - direct to Supabase edge function
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
+      console.log('Connecting to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
@@ -86,6 +87,7 @@ export const useRealtimeVoice = () => {
 
             case 'error':
               console.error('Realtime API error:', data.error);
+              setIsConnected(false);
               break;
 
             default:
@@ -98,10 +100,11 @@ export const useRealtimeVoice = () => {
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
+        setIsConnected(false);
       };
 
-      wsRef.current.onclose = () => {
-        console.log('WebSocket closed');
+      wsRef.current.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
         setIsConnected(false);
         setIsRecording(false);
         setIsAISpeaking(false);
@@ -109,6 +112,7 @@ export const useRealtimeVoice = () => {
 
     } catch (error) {
       console.error('Error connecting to realtime voice:', error);
+      setIsConnected(false);
       throw error;
     }
   }, []);
