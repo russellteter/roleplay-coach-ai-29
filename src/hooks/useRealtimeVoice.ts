@@ -240,7 +240,7 @@ export const useRealtimeVoice = () => {
         role: 'system',
         content: [
           {
-            type: 'text',
+            type: 'input_text',
             text: scenario.prompt
           }
         ]
@@ -255,7 +255,7 @@ export const useRealtimeVoice = () => {
         role: 'assistant',
         content: [
           {
-            type: 'text',
+            type: 'input_text',
             text: scenario.openingMessage
           }
         ]
@@ -321,7 +321,7 @@ export const useRealtimeVoice = () => {
         role: 'user',
         content: [
           {
-            type: 'text',
+            type: 'input_text',
             text
           }
         ]

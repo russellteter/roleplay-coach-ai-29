@@ -27,12 +27,36 @@ export const useScenarioPrompts = () => {
       setLoading(true);
       setError(null);
 
-      // Use static data for now since Supabase table doesn't exist yet
-      setScenarios(HEALTHCARE_SCENARIOS);
+      // Fetch scenarios from Supabase
+      const { data, error } = await supabase
+        .from('scenario_prompts')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching scenarios:', error);
+        setError('Failed to load scenarios');
+        // Fallback to static data
+        setScenarios(HEALTHCARE_SCENARIOS);
+        return;
+      }
+
+      // Map database fields to expected interface
+      const mappedScenarios: Scenario[] = data?.map((item: DatabaseScenario) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        prompt: item.prompt_text, // Map prompt_text to prompt
+        openingMessage: item.opening_message,
+        category: item.category as 'healthcare' | 'customer-service' | 'leadership' | 'general'
+      })) || [];
+
+      setScenarios(mappedScenarios);
       
     } catch (err) {
       console.error('Error in fetchScenarios:', err);
       setError('An unexpected error occurred');
+      // Fallback to static data only on unexpected errors
       setScenarios(HEALTHCARE_SCENARIOS);
     } finally {
       setLoading(false);

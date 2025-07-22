@@ -597,6 +597,36 @@ export type Database = {
         }
         Relationships: []
       }
+      scenario_prompts: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          id: string
+          opening_message: string
+          prompt_text: string
+          title: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description: string
+          id?: string
+          opening_message: string
+          prompt_text: string
+          title: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          id?: string
+          opening_message?: string
+          prompt_text?: string
+          title?: string
+        }
+        Relationships: []
+      }
       scenarios: {
         Row: {
           created_at: string
