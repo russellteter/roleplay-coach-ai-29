@@ -39,6 +39,7 @@ export const useRealtimeVoice = () => {
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const maxRetries = 3;
   const scenarioRef = useRef<Scenario | null>(null);
 
@@ -250,6 +251,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
+        }
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
         }
         retryCountRef.current = 0; // Reset retry count on successful connection
       };
@@ -537,8 +542,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
         audioContextRef.current = null;
       }
-      
+
       gainNodeRef.current = null;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
       retryCountRef.current = 0;
       scenarioRef.current = null;
       
@@ -562,12 +571,28 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
   }, [stopAudioCapture]);
 
   const retryConnection = useCallback(() => {
-    if (currentScenario) {
-      audioDebugger.log(`🔄 Retrying connection with scenario: ${currentScenario.title}`);
-      connect(currentScenario);
-    } else {
-      connect();
+    if (retryCountRef.current >= maxRetries) {
+      audioDebugger.log('🛑 Max retry attempts reached');
+      return;
     }
+
+    const delay = Math.min(2 ** retryCountRef.current * 1000, 16000);
+    audioDebugger.log(
+      `🔄 Retrying connection in ${delay}ms (attempt ${retryCountRef.current + 1}/${maxRetries})`
+    );
+
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+    }
+
+    retryTimeoutRef.current = setTimeout(() => {
+      retryCountRef.current += 1;
+      if (currentScenario) {
+        connect(currentScenario);
+      } else {
+        connect();
+      }
+    }, delay);
   }, [currentScenario, connect]);
 
   useEffect(() => {
