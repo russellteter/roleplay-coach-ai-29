@@ -1,4 +1,6 @@
 
+import { audioDebugger } from './AudioDebugger';
+
 export class AudioRecorder {
   private stream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
@@ -9,6 +11,8 @@ export class AudioRecorder {
 
   async start() {
     try {
+      audioDebugger.log('Starting audio recorder...');
+      
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 24000,
@@ -23,9 +27,12 @@ export class AudioRecorder {
         sampleRate: 24000,
       });
       
-      // Resume audio context if suspended (required by some browsers)
+      audioDebugger.debugAudioContext(this.audioContext);
+      
+      // Resume audio context if suspended
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
+        audioDebugger.log('AudioContext resumed during recorder start');
       }
       
       this.source = this.audioContext.createMediaStreamSource(this.stream);
@@ -38,13 +45,17 @@ export class AudioRecorder {
       
       this.source.connect(this.processor);
       this.processor.connect(this.audioContext.destination);
+      
+      audioDebugger.log('Audio recorder started successfully');
     } catch (error) {
-      console.error('Error accessing microphone:', error);
+      audioDebugger.error('Error accessing microphone', error);
       throw error;
     }
   }
 
   stop() {
+    audioDebugger.log('Stopping audio recorder...');
+    
     if (this.source) {
       this.source.disconnect();
       this.source = null;
@@ -61,6 +72,8 @@ export class AudioRecorder {
       this.audioContext.close();
       this.audioContext = null;
     }
+    
+    audioDebugger.log('Audio recorder stopped');
   }
 }
 
@@ -87,13 +100,23 @@ export class AudioQueue {
   private isPlaying = false;
   private audioContext: AudioContext;
   private currentSource: AudioBufferSourceNode | null = null;
+  private gainNode: GainNode;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
+    this.gainNode = audioContext.createGain();
+    this.gainNode.connect(audioContext.destination);
+    
+    audioDebugger.log('AudioQueue initialized with gain node');
+  }
+
+  setVolume(volume: number) {
+    this.gainNode.gain.value = volume;
+    audioDebugger.log(`Volume set to ${volume}`);
   }
 
   async addToQueue(audioData: Uint8Array) {
-    console.log('Adding audio to queue, size:', audioData.length);
+    audioDebugger.debugAudioData(audioData, 'Adding to queue');
     this.queue.push(audioData);
     if (!this.isPlaying) {
       await this.playNext();
@@ -103,6 +126,7 @@ export class AudioQueue {
   private async playNext() {
     if (this.queue.length === 0) {
       this.isPlaying = false;
+      audioDebugger.log('Audio queue finished playing');
       return;
     }
 
@@ -110,15 +134,17 @@ export class AudioQueue {
     const audioData = this.queue.shift()!;
 
     try {
-      console.log('Playing audio chunk, size:', audioData.length);
+      audioDebugger.log(`Playing audio chunk, size: ${audioData.length}`);
       
       // Ensure audio context is running
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
+        audioDebugger.log('AudioContext resumed during playback');
       }
       
       // Convert PCM16 data to AudioBuffer with improved error handling
       const audioBuffer = await this.pcmToAudioBuffer(audioData);
+      audioDebugger.debugAudioBuffer(audioBuffer);
       
       // Stop any currently playing audio
       if (this.currentSource) {
@@ -128,18 +154,19 @@ export class AudioQueue {
       
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(this.audioContext.destination);
+      source.connect(this.gainNode); // Connect to gain node instead of destination
       this.currentSource = source;
       
       source.onended = () => {
-        console.log('Audio chunk finished playing');
+        audioDebugger.log('Audio chunk finished playing');
         this.currentSource = null;
         this.playNext();
       };
       
       source.start(0);
+      audioDebugger.log('Audio chunk started playing');
     } catch (error) {
-      console.error('Error playing audio:', error);
+      audioDebugger.error('Error playing audio chunk', error);
       this.playNext(); // Continue with next segment even if current fails
     }
   }
@@ -148,7 +175,7 @@ export class AudioQueue {
     try {
       // Validate input data
       if (pcmData.length === 0 || pcmData.length % 2 !== 0) {
-        throw new Error('Invalid PCM data length');
+        throw new Error(`Invalid PCM data length: ${pcmData.length}`);
       }
 
       // Convert bytes to 16-bit samples (little-endian)
@@ -168,19 +195,22 @@ export class AudioQueue {
       const audioBuffer = this.audioContext.createBuffer(1, floatSamples.length, 24000);
       audioBuffer.getChannelData(0).set(floatSamples);
       
+      audioDebugger.log(`Created AudioBuffer: ${floatSamples.length} samples, ${audioBuffer.duration.toFixed(3)}s duration`);
       return audioBuffer;
     } catch (error) {
-      console.error('Error converting PCM to AudioBuffer:', error);
+      audioDebugger.error('Error converting PCM to AudioBuffer', error);
       throw error;
     }
   }
 
   stop() {
+    audioDebugger.log('Stopping audio queue...');
     if (this.currentSource) {
       this.currentSource.stop();
       this.currentSource = null;
     }
     this.queue = [];
     this.isPlaying = false;
+    audioDebugger.log('Audio queue stopped');
   }
 }
