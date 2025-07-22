@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { Scenario } from '@/utils/scenarioPrompts';
@@ -16,6 +17,7 @@ export const useRealtimeVoice = () => {
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -33,31 +35,48 @@ export const useRealtimeVoice = () => {
     return bytes;
   };
 
+  const initializeAudioContext = async () => {
+    try {
+      console.log("Initializing audio context...");
+      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      
+      // Resume audio context if suspended
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      
+      audioQueueRef.current = new AudioQueue(audioContextRef.current);
+      console.log("Audio context initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize audio context:", error);
+      throw new Error("Failed to initialize audio system");
+    }
+  };
+
   const connect = useCallback(async (scenario?: Scenario) => {
     try {
       setIsConnecting(true);
       setIsConnected(false);
+      setConnectionError(null);
       setAiResponse('');
       setTranscript('');
       setCurrentScenario(scenario || null);
       
-      console.log("Initializing audio context and queue...");
-      // Initialize audio context and queue
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
-      audioQueueRef.current = new AudioQueue(audioContextRef.current);
+      // Initialize audio system
+      await initializeAudioContext();
 
-      // Connect to realtime WebSocket - direct to Supabase edge function
+      // Connect to realtime WebSocket
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
       console.log('Connecting to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
 
-      // Set a connection timeout
+      // Set connection timeout
       connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           console.error('Connection timeout');
+          setConnectionError('Connection timeout after 15 seconds');
           wsRef.current?.close();
           setIsConnecting(false);
-          throw new Error('Connection timeout after 15 seconds');
         }
       }, 15000);
 
@@ -67,7 +86,6 @@ export const useRealtimeVoice = () => {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        // Don't set connected yet - wait for OpenAI connection confirmation
       };
 
       wsRef.current.onmessage = async (event) => {
@@ -80,8 +98,9 @@ export const useRealtimeVoice = () => {
               console.log('OpenAI connection established');
               setIsConnected(true);
               setIsConnecting(false);
+              setConnectionError(null);
               
-              // If we have a scenario, send the opening message
+              // If we have a scenario, send it after a brief delay
               if (scenario) {
                 console.log('Starting scenario:', scenario.title);
                 setTimeout(() => {
@@ -117,9 +136,13 @@ export const useRealtimeVoice = () => {
 
             case 'response.audio.delta':
               if (data.delta && audioQueueRef.current) {
-                const audioData = base64ToUint8Array(data.delta);
-                await audioQueueRef.current.addToQueue(audioData);
-                setIsAISpeaking(true);
+                try {
+                  const audioData = base64ToUint8Array(data.delta);
+                  await audioQueueRef.current.addToQueue(audioData);
+                  setIsAISpeaking(true);
+                } catch (audioError) {
+                  console.error('Error processing audio delta:', audioError);
+                }
               }
               break;
 
@@ -149,9 +172,10 @@ export const useRealtimeVoice = () => {
 
             case 'error':
               console.error('Realtime API error:', data.error);
+              setConnectionError(data.error || 'Connection error');
               setIsConnected(false);
               setIsConnecting(false);
-              throw new Error(data.error || 'Connection error');
+              break;
 
             case 'connection.closed':
               console.log('OpenAI connection closed');
@@ -164,13 +188,13 @@ export const useRealtimeVoice = () => {
           }
         } catch (error) {
           console.error('Error parsing message:', error);
-          setIsConnected(false);
-          setIsConnecting(false);
+          setConnectionError('Message parsing error');
         }
       };
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
+        setConnectionError('WebSocket connection error');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -194,9 +218,9 @@ export const useRealtimeVoice = () => {
 
     } catch (error) {
       console.error('Error connecting to realtime voice:', error);
+      setConnectionError(error instanceof Error ? error.message : 'Connection failed');
       setIsConnected(false);
       setIsConnecting(false);
-      throw error;
     }
   }, []);
 
@@ -208,7 +232,7 @@ export const useRealtimeVoice = () => {
 
     console.log("Sending scenario opening for:", scenario.title);
     
-    // Send the scenario prompt as a system message first
+    // Send the scenario prompt as a system message
     const systemEvent = {
       type: 'conversation.item.create',
       item: {
@@ -223,7 +247,7 @@ export const useRealtimeVoice = () => {
       }
     };
 
-    // Send the opening message as an assistant message
+    // Send the opening message as an assistant message to trigger voice response
     const openingEvent = {
       type: 'conversation.item.create',
       item: {
@@ -250,6 +274,12 @@ export const useRealtimeVoice = () => {
 
     try {
       console.log("Starting audio capture...");
+      
+      // Ensure audio context is available
+      if (!audioContextRef.current) {
+        await initializeAudioContext();
+      }
+      
       recorderRef.current = new AudioRecorder((audioData) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           const encodedAudio = encodeAudioForAPI(audioData);
@@ -311,6 +341,10 @@ export const useRealtimeVoice = () => {
       connectionTimeoutRef.current = null;
     }
     
+    if (audioQueueRef.current) {
+      audioQueueRef.current.stop();
+    }
+    
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -329,6 +363,7 @@ export const useRealtimeVoice = () => {
     setTranscript('');
     setAiResponse('');
     setCurrentScenario(null);
+    setConnectionError(null);
   }, [stopAudioCapture]);
 
   useEffect(() => {
@@ -346,6 +381,7 @@ export const useRealtimeVoice = () => {
     transcript,
     aiResponse,
     currentScenario,
+    connectionError,
     connect,
     startAudioCapture,
     stopAudioCapture,

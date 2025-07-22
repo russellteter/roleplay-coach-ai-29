@@ -23,6 +23,11 @@ export class AudioRecorder {
         sampleRate: 24000,
       });
       
+      // Resume audio context if suspended (required by some browsers)
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+      
       this.source = this.audioContext.createMediaStreamSource(this.stream);
       this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
       
@@ -81,6 +86,7 @@ export class AudioQueue {
   private queue: Uint8Array[] = [];
   private isPlaying = false;
   private audioContext: AudioContext;
+  private currentSource: AudioBufferSourceNode | null = null;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -106,15 +112,28 @@ export class AudioQueue {
     try {
       console.log('Playing audio chunk, size:', audioData.length);
       
-      // Convert PCM16 data directly to AudioBuffer
+      // Ensure audio context is running
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+      
+      // Convert PCM16 data to AudioBuffer with improved error handling
       const audioBuffer = await this.pcmToAudioBuffer(audioData);
+      
+      // Stop any currently playing audio
+      if (this.currentSource) {
+        this.currentSource.stop();
+        this.currentSource = null;
+      }
       
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(this.audioContext.destination);
+      this.currentSource = source;
       
       source.onended = () => {
         console.log('Audio chunk finished playing');
+        this.currentSource = null;
         this.playNext();
       };
       
@@ -126,22 +145,42 @@ export class AudioQueue {
   }
 
   private async pcmToAudioBuffer(pcmData: Uint8Array): Promise<AudioBuffer> {
-    // Convert bytes to 16-bit samples (little-endian)
-    const samples = new Int16Array(pcmData.length / 2);
-    for (let i = 0; i < pcmData.length; i += 2) {
-      samples[i / 2] = (pcmData[i + 1] << 8) | pcmData[i];
+    try {
+      // Validate input data
+      if (pcmData.length === 0 || pcmData.length % 2 !== 0) {
+        throw new Error('Invalid PCM data length');
+      }
+
+      // Convert bytes to 16-bit samples (little-endian)
+      const samples = new Int16Array(pcmData.length / 2);
+      for (let i = 0; i < pcmData.length; i += 2) {
+        // Little-endian: low byte first, then high byte
+        samples[i / 2] = (pcmData[i + 1] << 8) | pcmData[i];
+      }
+      
+      // Convert to float32 for AudioBuffer
+      const floatSamples = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) {
+        floatSamples[i] = samples[i] / 32768.0; // Normalize to [-1, 1]
+      }
+      
+      // Create AudioBuffer with proper sample rate
+      const audioBuffer = this.audioContext.createBuffer(1, floatSamples.length, 24000);
+      audioBuffer.getChannelData(0).set(floatSamples);
+      
+      return audioBuffer;
+    } catch (error) {
+      console.error('Error converting PCM to AudioBuffer:', error);
+      throw error;
     }
-    
-    // Convert to float32 for AudioBuffer
-    const floatSamples = new Float32Array(samples.length);
-    for (let i = 0; i < samples.length; i++) {
-      floatSamples[i] = samples[i] / 32768.0;
+  }
+
+  stop() {
+    if (this.currentSource) {
+      this.currentSource.stop();
+      this.currentSource = null;
     }
-    
-    // Create AudioBuffer
-    const audioBuffer = this.audioContext.createBuffer(1, floatSamples.length, 24000);
-    audioBuffer.getChannelData(0).set(floatSamples);
-    
-    return audioBuffer;
+    this.queue = [];
+    this.isPlaying = false;
   }
 }

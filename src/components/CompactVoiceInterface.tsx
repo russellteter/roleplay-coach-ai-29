@@ -1,18 +1,17 @@
 
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, Send, Users, MessageSquare } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, Send, Users, MessageSquare, AlertCircle, Loader2 } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
+import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
 import { HEALTHCARE_SCENARIOS, Scenario } from '@/utils/scenarioPrompts';
 
 const CompactVoiceInterface = () => {
   const { toast } = useToast();
   const [textInput, setTextInput] = useState('');
-  const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   
   const {
     isConnected,
@@ -23,12 +22,17 @@ const CompactVoiceInterface = () => {
     transcript,
     aiResponse,
     currentScenario,
+    connectionError,
     connect,
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
     disconnect
   } = useRealtimeVoice();
+
+  // Use Supabase scenarios if available, fallback to static ones
+  const { scenarios, loading: scenariosLoading, error: scenariosError } = useScenarioPrompts();
+  const availableScenarios = scenarios.length > 0 ? scenarios : HEALTHCARE_SCENARIOS;
 
   const handleConnect = async () => {
     try {
@@ -48,7 +52,6 @@ const CompactVoiceInterface = () => {
 
   const handleConnectWithScenario = async (scenario: Scenario) => {
     try {
-      setSelectedScenario(scenario);
       await connect(scenario);
       toast({
         title: "Scenario Started",
@@ -66,10 +69,14 @@ const CompactVoiceInterface = () => {
   const handleStartAudio = async () => {
     try {
       await startAudioCapture();
+      toast({
+        title: "Microphone Active",
+        description: "Start speaking naturally",
+      });
     } catch (error) {
       toast({
         title: "Microphone Error",
-        description: "Could not access microphone",
+        description: "Could not access microphone. Please check permissions.",
         variant: "destructive",
       });
     }
@@ -86,29 +93,47 @@ const CompactVoiceInterface = () => {
     <div className="w-full space-y-6">
       {/* Scenario Selection */}
       {!isConnected && !isConnecting && (
-        <Card className="p-6 bg-card border-border">
-          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
-            <Users className="w-5 h-5 mr-2 text-primary" />
+        <Card className="p-6 bg-primary border-primary/20 shadow-xl">
+          <h3 className="text-lg font-semibold text-primary-foreground mb-4 flex items-center">
+            <Users className="w-5 h-5 mr-2" />
             Choose Your Training Scenario
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-            {HEALTHCARE_SCENARIOS.map((scenario) => (
+          
+          {scenariosLoading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary-foreground" />
+              <span className="ml-2 text-primary-foreground">Loading scenarios...</span>
+            </div>
+          )}
+          
+          {scenariosError && (
+            <div className="flex items-center p-4 bg-destructive/10 border border-destructive/20 rounded-lg mb-4">
+              <AlertCircle className="w-5 h-5 text-destructive mr-2" />
+              <span className="text-destructive text-sm">
+                Could not load scenarios from database. Using default scenarios.
+              </span>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 gap-4 mb-4">
+            {availableScenarios.map((scenario) => (
               <Button
                 key={scenario.id}
                 onClick={() => handleConnectWithScenario(scenario)}
                 variant="outline"
-                className="h-auto p-4 text-left flex-col items-start border-border hover:border-primary/50 hover:bg-primary/5"
+                className="h-auto p-4 text-left flex-col items-start border-primary-foreground/20 hover:border-primary-foreground/40 hover:bg-primary-foreground/10 text-primary-foreground"
               >
-                <div className="font-medium text-foreground mb-1">{scenario.title}</div>
-                <div className="text-sm text-muted-foreground">{scenario.description}</div>
+                <div className="font-medium mb-1">{scenario.title}</div>
+                <div className="text-sm text-primary-foreground/80">{scenario.description}</div>
               </Button>
             ))}
           </div>
-          <div className="text-center pt-4 border-t border-border">
+          
+          <div className="text-center pt-4 border-t border-primary-foreground/20">
             <Button 
               onClick={handleConnect} 
               variant="ghost"
-              className="text-muted-foreground hover:text-foreground"
+              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
             >
               Or connect without a scenario
             </Button>
@@ -117,7 +142,7 @@ const CompactVoiceInterface = () => {
       )}
 
       {/* Connection Status */}
-      <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl">
+      <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-lg">
         <div className="flex items-center space-x-3">
           <div className={`w-3 h-3 rounded-full ${
             isConnected ? 'bg-green-500' : 
@@ -133,6 +158,11 @@ const CompactVoiceInterface = () => {
             {currentScenario && (
               <span className="text-sm text-muted-foreground">
                 Scenario: {currentScenario.title}
+              </span>
+            )}
+            {connectionError && (
+              <span className="text-sm text-destructive">
+                Error: {connectionError}
               </span>
             )}
           </div>
@@ -155,7 +185,7 @@ const CompactVoiceInterface = () => {
           </Button>
         ) : isConnecting ? (
           <Button disabled size="sm" className="bg-muted">
-            <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"></div>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             Connecting...
           </Button>
         ) : (
@@ -233,18 +263,18 @@ const CompactVoiceInterface = () => {
           {(transcript || aiResponse) && (
             <div className="space-y-3">
               {transcript && (
-                <div className="p-3 bg-muted/30 border border-border rounded-lg">
+                <div className="p-3 bg-secondary/30 border border-secondary/50 rounded-lg">
                   <div className="flex items-center mb-2">
-                    <MessageSquare className="w-4 h-4 mr-2 text-primary" />
-                    <span className="text-sm font-medium text-foreground">You said:</span>
+                    <MessageSquare className="w-4 h-4 mr-2 text-secondary-foreground" />
+                    <span className="text-sm font-medium text-secondary-foreground">You said:</span>
                   </div>
-                  <p className="text-sm text-foreground">
+                  <p className="text-sm text-secondary-foreground">
                     {transcript}
                   </p>
                 </div>
               )}
               {aiResponse && (
-                <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="p-3 bg-primary/10 border border-primary/30 rounded-lg">
                   <div className="flex items-center mb-2">
                     <Volume2 className="w-4 h-4 mr-2 text-primary" />
                     <span className="text-sm font-medium text-foreground">
@@ -262,7 +292,7 @@ const CompactVoiceInterface = () => {
       )}
 
       {/* Quick Tips */}
-      <div className="p-4 bg-muted/20 border border-border rounded-xl">
+      <div className="p-4 bg-muted/30 border border-muted rounded-xl">
         <h4 className="font-medium text-foreground mb-2">💡 Try saying:</h4>
         <ul className="text-sm text-muted-foreground space-y-1">
           <li>• "Help me practice a difficult customer conversation"</li>
@@ -275,4 +305,3 @@ const CompactVoiceInterface = () => {
 };
 
 export default CompactVoiceInterface;
-

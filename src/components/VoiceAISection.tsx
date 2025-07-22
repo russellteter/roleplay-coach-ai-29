@@ -1,5 +1,4 @@
 
-
 import { Card } from "@/components/ui/card";
 import { Brain, Volume2, Zap, Users } from "lucide-react";
 import CompactVoiceInterface from "@/components/CompactVoiceInterface";
@@ -31,7 +30,7 @@ const VoiceAISection = () => {
   return (
     <section id="voice-demo" className="py-20 bg-gradient-to-br from-primary/5 via-background to-secondary/5 border-y border-border/50 relative overflow-hidden">
       {/* Subtle Background Elements */}
-      <div className="absolute inset-0 opacity-40">
+      <div className="absolute inset-0 opacity-30">
         <div className="absolute top-20 left-20 w-32 h-32 border border-primary/20 rounded-full"></div>
         <div className="absolute bottom-20 right-20 w-24 h-24 border border-secondary/20 rounded-full"></div>
         <div className="absolute top-1/2 left-1/3 w-16 h-16 border border-muted-foreground/10 rounded-full"></div>
@@ -55,8 +54,8 @@ const VoiceAISection = () => {
               Experience natural conversations with instant feedback. Our AI understands context, emotion, and provides coaching through structured healthcare scenarios.
             </p>
 
-            {/* Features */}
-            <div className="space-y-6">
+            {/* Features Grid */}
+            <div className="grid gap-6">
               {features.map((feature, index) => (
                 <div key={index} className="flex items-start gap-4">
                   <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center flex-shrink-0 border border-primary/20">
@@ -66,7 +65,7 @@ const VoiceAISection = () => {
                     <h3 className="font-semibold text-foreground mb-2 text-lg">
                       {feature.title}
                     </h3>
-                    <p className="text-muted-foreground">
+                    <p className="text-muted-foreground leading-relaxed">
                       {feature.description}
                     </p>
                   </div>
@@ -75,21 +74,25 @@ const VoiceAISection = () => {
             </div>
           </div>
 
-          {/* Right Column - REAL-TIME VOICE DEMO */}
+          {/* Right Column - LIVE VOICE DEMO */}
           <div className="relative">
-            <Card className="p-8 bg-card/80 backdrop-blur-xl border border-border/50 shadow-2xl">
+            <div className="bg-gradient-to-br from-primary to-primary/80 p-8 rounded-2xl shadow-2xl border border-primary/20">
               <div className="text-center mb-6">
-                <h3 className="text-2xl font-bold text-foreground mb-3">
+                <h3 className="text-2xl font-bold text-primary-foreground mb-3">
                   Try Live Voice Demo
                 </h3>
-                <p className="text-muted-foreground">
+                <p className="text-primary-foreground/90">
                   Connect and practice conversations with real-time AI coaching
                 </p>
               </div>
               
               {/* Integration of the compact voice interface */}
               <CompactVoiceInterface />
-            </Card>
+            </div>
+            
+            {/* Decorative elements */}
+            <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/20 rounded-full blur-2xl"></div>
+            <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-secondary/20 rounded-full blur-2xl"></div>
           </div>
         </div>
       </div>
@@ -98,4 +101,3 @@ const VoiceAISection = () => {
 };
 
 export default VoiceAISection;
-
