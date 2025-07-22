@@ -146,8 +146,8 @@ serve(async (req) => {
           try {
             const data = JSON.parse(event.data);
             console.log(`📨 OpenAI -> Client: ${data.type}`);
-            
-            // Forward all OpenAI messages to client
+
+            // Forward all OpenAI messages to client after validation
             socket.send(event.data);
             console.log("📤 Forwarded to client:", data.type);
 
@@ -201,6 +201,9 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
             
           } catch (error) {
             console.error("❌ Error processing OpenAI message:", error);
+            socket.send(
+              JSON.stringify({ type: 'error', error: 'Invalid JSON from OpenAI' })
+            );
           }
         };
 
