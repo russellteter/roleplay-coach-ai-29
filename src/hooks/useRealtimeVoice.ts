@@ -274,8 +274,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               audioDebugger.log('✅ Session configuration updated - READY FOR SCENARIO');
               setConnectionState(ConnectionState.CONFIGURED);
               
-              // Automatically start scenario if we have one
-              if (scenarioRef.current && connectionState !== ConnectionState.STARTED) {
+              // Automatically start scenario if we have one - use ref to avoid race condition
+              if (scenarioRef.current) {
                 audioDebugger.log(`🎭 Auto-starting scenario: ${scenarioRef.current.title}`);
                 await sendScenarioOpening(scenarioRef.current);
               }
