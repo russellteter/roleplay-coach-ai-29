@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 
@@ -19,6 +20,7 @@ export const useRealtimeVoice = () => {
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -37,6 +39,7 @@ export const useRealtimeVoice = () => {
       setAiResponse('');
       setTranscript('');
       
+      console.log("Initializing audio context and queue...");
       // Initialize audio context and queue
       audioContextRef.current = new AudioContext({ sampleRate: 24000 });
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
@@ -47,25 +50,28 @@ export const useRealtimeVoice = () => {
       wsRef.current = new WebSocket(wsUrl);
 
       // Set a connection timeout
-      const connectionTimeout = setTimeout(() => {
+      connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           console.error('Connection timeout');
           wsRef.current?.close();
           setIsConnecting(false);
-          throw new Error('Connection timeout');
+          throw new Error('Connection timeout after 15 seconds');
         }
       }, 15000);
 
       wsRef.current.onopen = () => {
         console.log('WebSocket connected to Supabase edge function');
-        clearTimeout(connectionTimeout);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         // Don't set connected yet - wait for OpenAI connection confirmation
       };
 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: RealtimeMessage = JSON.parse(event.data);
-          console.log('Received message:', data.type, data);
+          console.log('Received message:', data.type);
 
           switch (data.type) {
             case 'connection.established':
@@ -93,7 +99,10 @@ export const useRealtimeVoice = () => {
               break;
 
             case 'conversation.item.input_audio_transcription.completed':
-              setTranscript(data.transcript || '');
+              if (data.transcript) {
+                console.log('Received transcript:', data.transcript);
+                setTranscript(data.transcript);
+              }
               break;
 
             case 'response.audio.delta':
@@ -116,20 +125,16 @@ export const useRealtimeVoice = () => {
               break;
 
             case 'response.audio_transcript.done':
-              console.log('Transcript completed');
-              break;
-
-            case 'input_audio_buffer.committed':
-              console.log('Audio buffer committed');
+              console.log('AI transcript completed');
               break;
 
             case 'response.created':
-              console.log('Response started');
+              console.log('AI response started');
               setAiResponse('');
               break;
 
             case 'response.done':
-              console.log('Response completed');
+              console.log('AI response completed');
               break;
 
             case 'error':
@@ -141,6 +146,7 @@ export const useRealtimeVoice = () => {
             case 'connection.closed':
               console.log('OpenAI connection closed');
               setIsConnected(false);
+              setIsConnecting(false);
               break;
 
             default:
@@ -148,19 +154,27 @@ export const useRealtimeVoice = () => {
           }
         } catch (error) {
           console.error('Error parsing message:', error);
+          setIsConnected(false);
+          setIsConnecting(false);
         }
       };
 
       wsRef.current.onerror = (error) => {
         console.error('WebSocket error:', error);
-        clearTimeout(connectionTimeout);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(false);
         setIsConnecting(false);
       };
 
       wsRef.current.onclose = (event) => {
         console.log('WebSocket closed:', event.code, event.reason);
-        clearTimeout(connectionTimeout);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setIsConnected(false);
         setIsConnecting(false);
         setIsRecording(false);
@@ -182,6 +196,7 @@ export const useRealtimeVoice = () => {
     }
 
     try {
+      console.log("Starting audio capture...");
       recorderRef.current = new AudioRecorder((audioData) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           const encodedAudio = encodeAudioForAPI(audioData);
@@ -193,6 +208,7 @@ export const useRealtimeVoice = () => {
       });
 
       await recorderRef.current.start();
+      setIsRecording(true);
     } catch (error) {
       console.error('Error starting audio capture:', error);
       throw error;
@@ -201,16 +217,20 @@ export const useRealtimeVoice = () => {
 
   const stopAudioCapture = useCallback(() => {
     if (recorderRef.current) {
+      console.log("Stopping audio capture...");
       recorderRef.current.stop();
       recorderRef.current = null;
+      setIsRecording(false);
     }
   }, []);
 
   const sendTextMessage = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("Cannot send text message - WebSocket not connected");
       return;
     }
 
+    console.log("Sending text message:", text);
     const event = {
       type: 'conversation.item.create',
       item: {
@@ -230,7 +250,13 @@ export const useRealtimeVoice = () => {
   }, []);
 
   const disconnect = useCallback(() => {
+    console.log("Disconnecting...");
     stopAudioCapture();
+    
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
     
     if (wsRef.current) {
       wsRef.current.close();
@@ -243,8 +269,10 @@ export const useRealtimeVoice = () => {
     }
     
     setIsConnected(false);
+    setIsConnecting(false);
     setIsRecording(false);
     setIsAISpeaking(false);
+    setIsUserSpeaking(false);
     setTranscript('');
     setAiResponse('');
   }, [stopAudioCapture]);

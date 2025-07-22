@@ -1,3 +1,4 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -22,10 +23,10 @@ serve(async (req) => {
   const { socket, response } = Deno.upgradeWebSocket(req);
   
   let openAISocket: WebSocket | null = null;
-  let sessionInitialized = false;
+  let sessionCreated = false;
 
   socket.onopen = async () => {
-    console.log("Client connected to realtime chat");
+    console.log("Client connected to realtime voice");
     
     try {
       // Get OpenAI API key
@@ -41,10 +42,7 @@ serve(async (req) => {
 
       console.log("Creating WebSocket connection to OpenAI...");
       
-      console.log("Creating WebSocket connection to OpenAI with proper authentication...");
-      
-      // Use the correct authentication method for OpenAI Realtime API
-      // Based on OpenAI docs, we need to use WebSocket subprotocols for authentication
+      // Connect to OpenAI Realtime API with proper authentication
       const wsUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
       const protocols = [
         "realtime",
@@ -53,38 +51,12 @@ serve(async (req) => {
       ];
       
       console.log("Connecting to:", wsUrl);
-      console.log("Using protocols:", protocols);
       
       openAISocket = new WebSocket(wsUrl, protocols);
 
       openAISocket.onopen = () => {
-        console.log("Connected to OpenAI WebSocket, sending authentication...");
-        
-        // Send authentication immediately after connection
-        const authMessage = {
-          type: "session.update",
-          session: {
-            modalities: ["text", "audio"],
-            instructions: "You are EchoCoach, an AI voice coaching assistant. Help users practice conversations, provide feedback on communication skills, and coach them through difficult scenarios. Be supportive, constructive, and professional. Keep responses concise but helpful.",
-            voice: "alloy",
-            input_audio_format: "pcm16",
-            output_audio_format: "pcm16",
-            input_audio_transcription: {
-              model: "whisper-1"
-            },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 1000
-            },
-            temperature: 0.8,
-            max_response_output_tokens: 4096
-          }
-        };
-        
-        console.log("Sending session configuration...");
-        openAISocket?.send(JSON.stringify(authMessage));
+        console.log("Connected to OpenAI Realtime API");
+        // Don't send session update yet - wait for session.created
       };
 
       openAISocket.onmessage = (event) => {
@@ -92,12 +64,42 @@ serve(async (req) => {
           const data = JSON.parse(event.data);
           console.log("Received from OpenAI:", data.type);
           
-          // Handle session creation
-          if (data.type === "session.created" && !sessionInitialized) {
-            console.log("Session created successfully!");
-            sessionInitialized = true;
+          // Handle session creation - now we can configure the session
+          if (data.type === "session.created" && !sessionCreated) {
+            console.log("Session created, sending configuration...");
+            sessionCreated = true;
             
-            // Now we can tell the client we're connected
+            // Send session configuration
+            const sessionConfig = {
+              type: "session.update",
+              session: {
+                modalities: ["text", "audio"],
+                instructions: "You are EchoCoach, an AI voice coaching assistant. Help users practice conversations, provide feedback on communication skills, and coach them through difficult scenarios. Be supportive, constructive, and professional. Keep responses concise but helpful.",
+                voice: "alloy",
+                input_audio_format: "pcm16",
+                output_audio_format: "pcm16",
+                input_audio_transcription: {
+                  model: "whisper-1"
+                },
+                turn_detection: {
+                  type: "server_vad",
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 1000
+                },
+                temperature: 0.8,
+                max_response_output_tokens: 4096
+              }
+            };
+            
+            openAISocket?.send(JSON.stringify(sessionConfig));
+          }
+          
+          // Handle session update confirmation
+          if (data.type === "session.updated") {
+            console.log("Session configured successfully!");
+            
+            // Now tell the client we're ready
             socket.send(JSON.stringify({
               type: "connection.established",
               message: "Connected to OpenAI Realtime API"
@@ -115,7 +117,7 @@ serve(async (req) => {
         console.error("OpenAI WebSocket error:", error);
         socket.send(JSON.stringify({
           type: "error",
-          error: "Connection to OpenAI failed: " + error.toString()
+          error: "Connection to OpenAI failed"
         }));
       };
 
@@ -141,21 +143,25 @@ serve(async (req) => {
     try {
       console.log("Forwarding message from client to OpenAI");
       
-      // If we need to add authentication to outgoing messages, do it here
-      const message = JSON.parse(event.data);
-      
-      // Add authorization header to the message if needed
-      if (!message.authorization && Deno.env.get('OPENAI_API_KEY')) {
-        message.authorization = `Bearer ${Deno.env.get('OPENAI_API_KEY')}`;
-      }
+      // CRITICAL FIX: Do NOT add authorization to messages
+      // OpenAI authentication is handled at WebSocket connection level only
+      const message = event.data;
       
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-        openAISocket.send(JSON.stringify(message));
+        openAISocket.send(message);
       } else {
         console.warn("OpenAI socket not ready, message dropped");
+        socket.send(JSON.stringify({
+          type: "error",
+          error: "OpenAI connection not ready"
+        }));
       }
     } catch (error) {
       console.error("Error forwarding client message:", error);
+      socket.send(JSON.stringify({
+        type: "error",
+        error: "Failed to forward message: " + error.message
+      }));
     }
   };
 
