@@ -12,7 +12,7 @@ import type {
 const EVENTS = {
   CONNECTION_ESTABLISHED: 'connection.established',
   SESSION_CREATED: 'session.created',
-  SESSION_UPDATED: 'session.updated',
+  SESSION_UPDATED: 'response.audio.delta',
   AUDIO_DELTA: 'response.audio.delta',
   AUDIO_DONE: 'response.audio.done',
   AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
@@ -116,6 +116,7 @@ export const useRealtimeVoice = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [shouldStartScenario, setShouldStartScenario] = useState(false);
   
   // Derived states for backward compatibility
   const isConnected = state.state === ConnectionState.CONFIGURED || state.state === ConnectionState.STARTED;
@@ -225,38 +226,6 @@ export const useRealtimeVoice = () => {
     });
   }, [state.sequenceId, logEvent]);
 
-  const testEdgeFunctionHealth = async (): Promise<boolean> => {
-    try {
-      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
-      const { data, error } = await supabase.functions.invoke('realtime-voice', {
-        body: { action: 'health' }
-      });
-      
-      if (error) {
-        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
-        setConnectionError(`Edge function error: ${error.message}`);
-        return false;
-      }
-      
-      if (data) {
-        logEvent('▷', 'HEALTH_CHECK_SUCCESS', data);
-        
-        if (!data.hasOpenAIKey) {
-          setConnectionError('OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your secrets.');
-          return false;
-        }
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
-      setConnectionError('Cannot reach edge function. Please check your connection.');
-      return false;
-    }
-  };
-
   const sendScenarioOpening = useCallback(async (scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       logEvent('▷', 'SCENARIO_OPENING_ERROR', 'WebSocket not connected');
@@ -313,12 +282,21 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
       dispatch({ type: 'STARTED' });
       scenarioOpeningSentRef.current = true;
+      setShouldStartScenario(false); // Reset the flag
       
     } catch (error) {
       logEvent('▷', 'SCENARIO_OPENING_ERROR', error);
       setConnectionError('Failed to start scenario. Please try again.');
     }
   }, [sendAndAwaitResponse, logEvent]);
+
+  // Auto-start scenario when conditions are met
+  useEffect(() => {
+    if (shouldStartScenario && state.state === ConnectionState.CONFIGURED && scenarioRef.current && !scenarioOpeningSentRef.current) {
+      logEvent('▷', 'AUTO_START_SCENARIO_EFFECT', `Starting scenario: ${scenarioRef.current.title}`);
+      sendScenarioOpening(scenarioRef.current);
+    }
+  }, [shouldStartScenario, state.state, sendScenarioOpening, logEvent]);
 
   const startHealthCheck = useCallback(() => {
     if (healthCheckRef.current) {
@@ -365,6 +343,38 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }, delay);
   }, [retryAttempts, currentScenario, logEvent]);
 
+  const testEdgeFunctionHealth = async (): Promise<boolean> => {
+    try {
+      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
+      const { data, error } = await supabase.functions.invoke('realtime-voice', {
+        body: { action: 'health' }
+      });
+      
+      if (error) {
+        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
+        setConnectionError(`Edge function error: ${error.message}`);
+        return false;
+      }
+      
+      if (data) {
+        logEvent('▷', 'HEALTH_CHECK_SUCCESS', data);
+        
+        if (!data.hasOpenAIKey) {
+          setConnectionError('OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your secrets.');
+          return false;
+        }
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
+      setConnectionError('Cannot reach edge function. Please check your connection.');
+      return false;
+    }
+  };
+
   const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {
     try {
       logEvent('▷', 'CONNECTION_START', 'Starting connection process');
@@ -374,6 +384,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       setConnectionError(null);
       shouldReconnectRef.current = true;
       scenarioOpeningSentRef.current = false; // Reset scenario opening flag
+      setShouldStartScenario(false); // Reset scenario start flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -432,10 +443,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY FOR SCENARIO');
               dispatch({ type: 'CONFIGURED' });
               
-              // Automatically start scenario if we have one and haven't sent it yet
+              // Set flag to start scenario instead of calling it directly
               if (scenarioRef.current && !scenarioOpeningSentRef.current) {
-                logEvent('▷', 'AUTO_START_SCENARIO', `Auto-starting scenario: ${scenarioRef.current.title}`);
-                await sendScenarioOpening(scenarioRef.current);
+                logEvent('▷', 'TRIGGER_SCENARIO_START', `Triggering scenario start: ${scenarioRef.current.title}`);
+                setShouldStartScenario(true);
               }
               break;
 
@@ -555,6 +566,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
         scenarioOpeningSentRef.current = false; // Reset scenario opening flag
+        setShouldStartScenario(false); // Reset scenario start flag
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
@@ -697,6 +709,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       stopAudioCapture();
       shouldReconnectRef.current = false;
       scenarioOpeningSentRef.current = false; // Reset scenario opening flag
+      setShouldStartScenario(false); // Reset scenario start flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
