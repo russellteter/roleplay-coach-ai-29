@@ -71,3 +71,14 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+## Environment Variables
+
+Create a `.env` file in the project root with the following variables:
+
+```bash
+SUPABASE_URL=<your supabase url>
+SUPABASE_PUBLISHABLE_KEY=<your supabase anon key>
+```
+
+These values are required for the Supabase client configuration.
