@@ -65,6 +65,12 @@ const VoiceAISection = () => {
               variant="outline-hero" 
               size="lg"
               className="bg-accent-foreground text-accent hover:bg-accent-foreground/90"
+              onClick={() => {
+                const voiceDemo = document.getElementById('voice-demo');
+                if (voiceDemo) {
+                  voiceDemo.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
             >
               <Mic className="w-5 h-5" />
               Try a Voice Demo
