@@ -122,9 +122,10 @@ serve(async (req) => {
             
             // Forward all OpenAI messages to client
             socket.send(event.data);
+            console.log("📤 Forwarded to client:", data.type);
 
-            // Handle session.created to send our optimized configuration
-            if (data.type === 'session.created') {
+            // Handle session.create to send our optimized configuration
+            if (data.type === 'session.create') {
               console.log("⚙️ Configuring OpenAI session for roleplay scenarios");
               
               const sessionConfig = {
