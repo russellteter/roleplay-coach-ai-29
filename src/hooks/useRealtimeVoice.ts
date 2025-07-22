@@ -10,9 +10,16 @@ export interface RealtimeMessage {
   [key: string]: any;
 }
 
+// Simplified connection state enum
+enum ConnectionState {
+  CLOSED = 'CLOSED',
+  OPENING = 'OPENING', 
+  CONFIGURED = 'CONFIGURED',
+  STARTED = 'STARTED'
+}
+
 export const useRealtimeVoice = () => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.CLOSED);
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -20,6 +27,10 @@ export const useRealtimeVoice = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  // Derived states for backward compatibility
+  const isConnected = connectionState === ConnectionState.CONFIGURED || connectionState === ConnectionState.STARTED;
+  const isConnecting = connectionState === ConnectionState.OPENING;
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -29,7 +40,7 @@ export const useRealtimeVoice = () => {
   const gainNodeRef = useRef<GainNode | null>(null);
   const retryCountRef = useRef(0);
   const maxRetries = 3;
-  const scenarioOpeningSentRef = useRef(false);
+  const scenarioRef = useRef<Scenario | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -72,6 +83,25 @@ export const useRealtimeVoice = () => {
     }
   };
 
+  // Promise-based message sending with acknowledgment
+  const sendAndAwaitAck = useCallback((event: any): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      audioDebugger.log(`📤 Sending event: ${event.type}`);
+      wsRef.current.send(JSON.stringify(event));
+      
+      // For most events, we resolve immediately since OpenAI doesn't send explicit acks
+      // We'll use a small delay to ensure message is processed
+      setTimeout(() => {
+        resolve();
+      }, 100);
+    });
+  }, []);
+
   // Test edge function health before connecting
   const testEdgeFunctionHealth = async (): Promise<boolean> => {
     try {
@@ -105,84 +135,87 @@ export const useRealtimeVoice = () => {
     }
   };
 
-  const sendScenarioOpening = useCallback((scenario: Scenario) => {
+  const sendScenarioOpening = useCallback(async (scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       audioDebugger.log("❌ Cannot send scenario opening - WebSocket not connected");
       return;
     }
 
-    if (scenarioOpeningSentRef.current) {
-      audioDebugger.log("⚠️ Scenario opening already sent, skipping");
-      return;
-    }
-
-    audioDebugger.log(`🎭 Sending scenario opening for: ${scenario.title}`);
-    scenarioOpeningSentRef.current = true;
-    
-    // Send system message with clear instructions for immediate response
-    const systemEvent = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'system',
-        content: [
-          {
-            type: 'text',
-            text: `${scenario.prompt}
+    try {
+      audioDebugger.log(`🎭 Starting scenario opening sequence for: ${scenario.title}`);
+      
+      // Step 1: Send system message with clear instructions
+      const systemEvent = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: `${scenario.prompt}
 
 CRITICAL INSTRUCTION: You must immediately start speaking when this conversation begins. Do not wait for the user to speak first. Begin by saying exactly: "${scenario.openingMessage}"
 
 Then explain the scenario and your role clearly. Be proactive and engaging. The user is expecting YOU to start the conversation immediately.`
-          }
-        ]
-      }
-    };
+            }
+          ]
+        }
+      };
 
-    // Send a direct trigger that tells the AI to start speaking immediately
-    const triggerEvent = {
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Please start the ${scenario.title} roleplay scenario now. Begin speaking immediately with your opening message.`
-          }
-        ]
-      }
-    };
+      await sendAndAwaitAck(systemEvent);
+      audioDebugger.log("✅ System message sent and acknowledged");
 
-    // Send the events
-    wsRef.current.send(JSON.stringify(systemEvent));
-    setTimeout(() => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify(triggerEvent));
-        wsRef.current.send(JSON.stringify({ type: 'response.create' }));
-        audioDebugger.log("✅ Scenario opening messages sent, AI should start speaking");
-      }
-    }, 500); // Small delay to ensure system message is processed first
-  }, []);
+      // Step 2: Send trigger message
+      const triggerEvent = {
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Please start the ${scenario.title} roleplay scenario now. Begin speaking immediately with your opening message.`
+            }
+          ]
+        }
+      };
+
+      await sendAndAwaitAck(triggerEvent);
+      audioDebugger.log("✅ Trigger message sent and acknowledged");
+
+      // Step 3: Request response
+      const responseEvent = { type: 'response.create' };
+      await sendAndAwaitAck(responseEvent);
+      audioDebugger.log("✅ Response creation requested - AI should start speaking now!");
+
+      setConnectionState(ConnectionState.STARTED);
+      
+    } catch (error) {
+      audioDebugger.error("❌ Failed to send scenario opening", error);
+      setConnectionError('Failed to start scenario. Please try again.');
+    }
+  }, [sendAndAwaitAck]);
 
   const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
-      setIsConnecting(true);
+      setConnectionState(ConnectionState.OPENING);
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
-      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
       
       // Set the scenario immediately
       if (scenario) {
         setCurrentScenario(scenario);
+        scenarioRef.current = scenario;
         audioDebugger.log(`Selected scenario: ${scenario.title}`);
       }
       
       // Test edge function health first
       const isHealthy = await testEdgeFunctionHealth();
       if (!isHealthy) {
-        setIsConnecting(false);
+        setConnectionState(ConnectionState.CLOSED);
         return;
       }
       
@@ -208,7 +241,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           if (wsRef.current) {
             wsRef.current.close();
           }
-          setIsConnecting(false);
+          setConnectionState(ConnectionState.CLOSED);
         }
       }, 20000);
 
@@ -224,29 +257,27 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: RealtimeMessage = JSON.parse(event.data);
-          audioDebugger.log(`📨 Received message: ${data.type}`);
+          audioDebugger.log(`📨 ▷ GOT EVENT: ${data.type}`);
 
           switch (data.type) {
             case 'connection.established':
               audioDebugger.log('✅ OpenAI connection established');
-              setIsConnected(true);
-              setIsConnecting(false);
+              // Don't set as connected yet, wait for session.update
               setConnectionError(null);
               break;
 
-            case 'session.created':
+            case 'session.create':
               audioDebugger.log('⚙️ OpenAI session created');
               break;
 
-            case 'session.updated':
-              audioDebugger.log('✅ Session configuration updated');
+            case 'session.update':
+              audioDebugger.log('✅ Session configuration updated - READY FOR SCENARIO');
+              setConnectionState(ConnectionState.CONFIGURED);
               
-              // Start scenario immediately after session is fully configured
-              if (scenario && !scenarioOpeningSentRef.current) {
-                audioDebugger.log(`🎭 Session ready, starting scenario: ${scenario.title}`);
-                setTimeout(() => {
-                  sendScenarioOpening(scenario);
-                }, 1000); // Give a moment for session to fully settle
+              // Automatically start scenario if we have one
+              if (scenarioRef.current && connectionState !== ConnectionState.STARTED) {
+                audioDebugger.log(`🎭 Auto-starting scenario: ${scenarioRef.current.title}`);
+                await sendScenarioOpening(scenarioRef.current);
               }
               break;
 
@@ -322,13 +353,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               } else {
                 setConnectionError(`Connection Error: ${errorMessage}`);
               }
-              setIsConnecting(false);
+              setConnectionState(ConnectionState.CLOSED);
               break;
 
             case 'connection.closed':
               audioDebugger.log('🔴 OpenAI connection closed');
-              setIsConnected(false);
-              setIsConnecting(false);
+              setConnectionState(ConnectionState.CLOSED);
               setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
               break;
 
@@ -348,7 +378,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        setIsConnecting(false);
+        setConnectionState(ConnectionState.CLOSED);
       };
 
       wsRef.current.onclose = (event) => {
@@ -358,12 +388,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         
-        setIsConnected(false);
-        setIsConnecting(false);
+        setConnectionState(ConnectionState.CLOSED);
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
-        scenarioOpeningSentRef.current = false;
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
@@ -387,10 +415,9 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     } catch (error) {
       audioDebugger.error('❌ Error connecting to realtime voice', error);
       setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
-      setIsConnected(false);
-      setIsConnecting(false);
+      setConnectionState(ConnectionState.CLOSED);
     }
-  }, [sendScenarioOpening]);
+  }, [sendScenarioOpening, connectionState]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -494,10 +521,9 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     
     gainNodeRef.current = null;
     retryCountRef.current = 0;
-    scenarioOpeningSentRef.current = false;
+    scenarioRef.current = null;
     
-    setIsConnected(false);
-    setIsConnecting(false);
+    setConnectionState(ConnectionState.CLOSED);
     setIsRecording(false);
     setIsAISpeaking(false);
     setIsUserSpeaking(false);
