@@ -79,9 +79,28 @@ serve(async (req) => {
     
     let openAISocket: WebSocket | null = null;
     let isConnected = false;
+    let idleTimer: number | null = null;
+    const IDLE_TIMEOUT_MS = 60_000; // close connection if idle for 60s
+
+    const resetIdleTimer = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
+      idleTimer = setTimeout(() => {
+        console.log("⏱️ Closing idle OpenAI connection");
+        cleanup();
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        }
+      }, IDLE_TIMEOUT_MS);
+    };
 
     const cleanup = () => {
       console.log("🧹 Cleaning up connections");
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
         openAISocket.close();
       }
@@ -92,6 +111,7 @@ serve(async (req) => {
     socket.onopen = async () => {
       try {
         console.log("🟢 Client WebSocket connection opened");
+        resetIdleTimer();
         
         // Connect to OpenAI Realtime API
         const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
@@ -107,6 +127,7 @@ serve(async (req) => {
         openAISocket.onopen = () => {
           console.log("✅ Connected to OpenAI Realtime API");
           isConnected = true;
+          resetIdleTimer();
           
           // Send connection established event to client
           socket.send(JSON.stringify({
@@ -170,6 +191,7 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
               console.log("📤 Sending session configuration to OpenAI");
               openAISocket.send(JSON.stringify(sessionConfig));
             }
+            resetIdleTimer();
             
           } catch (error) {
             console.error("❌ Error processing OpenAI message:", error);
@@ -212,10 +234,11 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
         const data = JSON.parse(event.data);
         console.log(`📨 Client -> OpenAI: ${data.type}`);
-        
+
         // Forward client messages to OpenAI
         openAISocket.send(event.data);
-        
+        resetIdleTimer();
+
       } catch (error) {
         console.error("❌ Error processing client message:", error);
         socket.send(JSON.stringify({
@@ -226,13 +249,19 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
     };
 
     socket.onerror = (error) => {
-      console.error("❌ Client WebSocket error:", error);
-      cleanup();
+      try {
+        console.error("❌ Client WebSocket error:", error);
+      } finally {
+        cleanup();
+      }
     };
 
     socket.onclose = (event) => {
-      console.log(`🔴 Client WebSocket closed: ${event.code} ${event.reason}`);
-      cleanup();
+      try {
+        console.log(`🔴 Client WebSocket closed: ${event.code} ${event.reason}`);
+      } finally {
+        cleanup();
+      }
     };
 
     return response;
