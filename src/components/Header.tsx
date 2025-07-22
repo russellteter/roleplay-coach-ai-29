@@ -17,7 +17,7 @@ const Header = () => {
               <Mic className="w-5 h-5 text-accent-foreground" />
             </div>
             <span className="text-xl font-heading font-bold text-foreground">
-              EchoCoach
+              Sharpen
             </span>
           </div>
 

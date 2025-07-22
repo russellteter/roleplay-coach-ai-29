@@ -1,9 +1,11 @@
 import Header from "@/components/Header";
 import HeroSection from "@/components/HeroSection";
+import UseCasesPanelSection from "@/components/UseCasesPanelSection";
 import ProblemSection from "@/components/ProblemSection";
 import UseCasesSection from "@/components/UseCasesSection";
 import HowItWorksSection from "@/components/HowItWorksSection";
 import VoiceAISection from "@/components/VoiceAISection";
+import ContextUploadSection from "@/components/ContextUploadSection";
 import SocialProofSection from "@/components/SocialProofSection";
 import SignupSection from "@/components/SignupSection";
 import Footer from "@/components/Footer";
@@ -14,16 +16,16 @@ const Index = () => {
     <div className="min-h-screen">
       <Header />
       <HeroSection />
+      <UseCasesPanelSection />
       <ProblemSection />
-      <UseCasesSection />
-      <HowItWorksSection />
       <VoiceAISection />
+      <ContextUploadSection />
       
-      {/* Voice Demo Section */}
+      {/* Real-time Voice Demo Section */}
       <section id="voice-demo" className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
           <div className="mb-12 text-center">
-            <h2 className="text-3xl font-bold mb-4">Real-Time Voice Coaching</h2>
+            <h2 className="text-3xl font-heading font-bold mb-4">Real-Time Voice Coaching</h2>
             <p className="text-muted-foreground">Experience natural voice conversations with AI-powered coaching</p>
           </div>
           
@@ -33,6 +35,8 @@ const Index = () => {
         </div>
       </section>
       
+      <UseCasesSection />
+      <HowItWorksSection />
       <SocialProofSection />
       <SignupSection />
       <Footer />

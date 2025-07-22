@@ -77,12 +77,12 @@ const VoiceAISection = () => {
             </Button>
           </div>
 
-          {/* Right Column - Voice Demo */}
+          {/* Right Column - Voice Demo moved from separate section */}
           <div className="relative">
             <Card className="p-8 bg-accent-foreground/10 backdrop-blur-sm border-accent-foreground/20">
               <div className="text-center">
                 <h3 className="text-xl font-semibold text-accent-foreground mb-6">
-                  Voice AI Demo
+                  Real-Time Voice Demo
                 </h3>
                 
                 {/* Waveform Visualization */}

@@ -31,10 +31,10 @@ All colors MUST be HSL.
     --muted: 220 13% 91%;
     --muted-foreground: 215 16% 47%;
 
-    /* Accent - Teal */
-    --accent: 188 95% 38%; /* #00B7C2 */
-    --accent-foreground: 0 0% 100%;
-    --accent-glow: 188 95% 48%;
+    /* Accent - Fresh Teal */
+    --accent: 175 70% 55%; /* Fresh teal */
+    --accent-foreground: 175 100% 15%;
+    --accent-glow: 175 100% 90%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;

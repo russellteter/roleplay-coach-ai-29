@@ -15,15 +15,14 @@ const HeroSection = () => {
           {/* Left Column - Content */}
           <div className="fade-in">
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-bold text-foreground leading-tight mb-6">
-              Train for Critical Conversations with{" "}
               <span className="bg-gradient-accent bg-clip-text text-transparent">
-                AI
+                Sharpen Your Voice
               </span>
             </h1>
             
             <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-              EchoCoach helps teams rehearse high-stakes conversations with real-time voice coaching powered by AI. 
-              Perfect for customer service, healthcare communication, and workplace training.
+              Get sharper every day with AI-powered voice coaching. Practice critical conversations with 
+              real-time feedback for customer support, healthcare communication, and compliance training.
             </p>
 
             {/* CTAs */}
@@ -65,11 +64,17 @@ const HeroSection = () => {
           {/* Right Column - Hero Image */}
           <div className="relative lg:h-[600px] fade-in">
             <div className="absolute inset-0 bg-gradient-accent rounded-2xl opacity-10 blur-xl"></div>
-            <img 
-              src={heroImage} 
-              alt="AI Voice Coaching Interface" 
-              className="relative z-10 w-full h-full object-cover rounded-2xl shadow-elegant hover-scale"
-            />
+            <div className="relative z-10 w-full h-full rounded-2xl overflow-hidden shadow-elegant hover-scale">
+              <img 
+                src={heroImage} 
+                alt="AI Voice Coaching Interface" 
+                className="w-full h-full object-cover"
+              />
+              {/* Blurred fade-in overlay from top to middle */}
+              <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/20 to-transparent"></div>
+              {/* Gradient overlay blending to accent color */}
+              <div className="absolute inset-0 bg-gradient-to-br from-transparent via-accent/10 to-accent/20"></div>
+            </div>
             
             {/* Floating Voice Indicator */}
             <div className="absolute bottom-6 left-6 bg-background/90 backdrop-blur-sm rounded-xl p-4 shadow-card">
