@@ -2,6 +2,12 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// Basic event types shared with the frontend
+interface SessionUpdateEvent {
+  type: 'session.update';
+  session: Record<string, unknown>;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -128,7 +134,7 @@ serve(async (req) => {
             if (data.type === 'session.create') {
               console.log("⚙️ Configuring OpenAI session for roleplay scenarios");
               
-              const sessionConfig = {
+              const sessionConfig: SessionUpdateEvent = {
                 type: 'session.update',
                 session: {
                   modalities: ["text", "audio"],
