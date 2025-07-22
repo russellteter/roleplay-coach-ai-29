@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -26,6 +27,8 @@ export const useRealtimeVoice = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const retryCountRef = useRef(0);
+  const maxRetries = 3;
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -78,6 +81,7 @@ export const useRealtimeVoice = () => {
       setConnectionError(null);
       setAiResponse('');
       setTranscript('');
+      retryCountRef.current = 0;
       
       // Set the selected scenario immediately
       if (scenario) {
@@ -89,16 +93,21 @@ export const useRealtimeVoice = () => {
       // Initialize audio system with user interaction
       await initializeAudioContext();
 
-      // Connect to realtime WebSocket
+      // Connect to realtime WebSocket with correct URL
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
       audioDebugger.log(`Connecting to: ${wsUrl}`);
       wsRef.current = new WebSocket(wsUrl);
 
-      // Set connection timeout
+      // Set connection timeout with retry logic
       connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           audioDebugger.error('Connection timeout after 15 seconds');
-          setConnectionError('Connection timeout. Please try again.');
+          if (retryCountRef.current < maxRetries) {
+            setConnectionError(`Connection timeout. Retrying... (${retryCountRef.current + 1}/${maxRetries})`);
+            retryCountRef.current++;
+          } else {
+            setConnectionError('Connection failed after multiple attempts. Please check your internet connection and try again.');
+          }
           if (wsRef.current) {
             wsRef.current.close();
           }
@@ -112,6 +121,7 @@ export const useRealtimeVoice = () => {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
+        retryCountRef.current = 0; // Reset retry count on successful connection
       };
 
       wsRef.current.onmessage = async (event) => {
@@ -131,7 +141,7 @@ export const useRealtimeVoice = () => {
                 audioDebugger.log(`Starting scenario: ${selectedScenario.title}`);
                 setTimeout(() => {
                   sendScenarioOpening(selectedScenario);
-                }, 500); // Reduced delay
+                }, 300); // Reduced delay for faster response
               }
               break;
 
@@ -210,7 +220,8 @@ export const useRealtimeVoice = () => {
                 : typeof data.error === 'string' 
                 ? data.error 
                 : JSON.stringify(data.error);
-              setConnectionError(`AI Service Error: ${errorMessage}`);
+              
+              setConnectionError(`OpenAI API Error: ${errorMessage}. This might be a temporary issue - please try again.`);
               setIsConnecting(false);
               break;
 
@@ -218,6 +229,7 @@ export const useRealtimeVoice = () => {
               audioDebugger.log('OpenAI connection closed');
               setIsConnected(false);
               setIsConnecting(false);
+              setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
               break;
 
             default:
@@ -225,13 +237,13 @@ export const useRealtimeVoice = () => {
           }
         } catch (error) {
           audioDebugger.error('Error parsing message', error);
-          setConnectionError('Message parsing error');
+          setConnectionError('Message parsing error - invalid response from server');
         }
       };
 
       wsRef.current.onerror = (error) => {
         audioDebugger.error('WebSocket error', error);
-        setConnectionError('WebSocket connection failed. Please check your internet connection.');
+        setConnectionError('WebSocket connection failed. Please check your internet connection and try again.');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -250,11 +262,16 @@ export const useRealtimeVoice = () => {
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
+        
+        // Only show error if it wasn't a clean close
+        if (event.code !== 1000) {
+          setConnectionError(`Connection closed unexpectedly (${event.code}). Please try again.`);
+        }
       };
 
     } catch (error) {
       audioDebugger.error('Error connecting to realtime voice', error);
-      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
       setIsConnected(false);
       setIsConnecting(false);
     }
@@ -278,7 +295,7 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: `You are a roleplay partner for professional training. ${scenario.prompt} Start by delivering this opening message verbally: "${scenario.openingMessage}"`
+            text: `${scenario.prompt} Start the conversation with: "${scenario.openingMessage}"`
           }
         ]
       }
@@ -293,7 +310,7 @@ export const useRealtimeVoice = () => {
         content: [
           {
             type: 'text',
-            text: `Please begin the roleplay scenario: ${scenario.title}`
+            text: `Begin the roleplay scenario: ${scenario.title}`
           }
         ]
       }
@@ -407,6 +424,7 @@ export const useRealtimeVoice = () => {
     }
     
     gainNodeRef.current = null;
+    retryCountRef.current = 0;
     
     setIsConnected(false);
     setIsConnecting(false);

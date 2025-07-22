@@ -27,12 +27,15 @@ export const useScenarioPrompts = () => {
 
         if (error) throw error;
 
-        // Map the data to ensure consistent category naming
+        // Map the data to ensure consistent field naming and handle both category naming conventions
         const mappedScenarios = data?.map((scenario: any) => ({
           ...scenario,
-          openingMessage: scenario.opening_message || scenario.openingMessage
+          openingMessage: scenario.opening_message || scenario.openingMessage,
+          // Normalize categories to match frontend expectations
+          category: scenario.category === 'customer-service' ? 'customer-support' : scenario.category
         })) || [];
 
+        console.log('Fetched scenarios:', mappedScenarios);
         setScenarios(mappedScenarios);
       } catch (err) {
         console.error('Error fetching scenarios:', err);
