@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
@@ -145,6 +146,11 @@ const VoiceDemo = () => {
     }
   };
 
+  const handleDismissError = () => {
+    // Clear error by attempting to disconnect and reset state
+    disconnect();
+  };
+
   return (
     <div className="w-full space-y-8">
       {/* Header Section */}
@@ -260,6 +266,25 @@ const VoiceDemo = () => {
             </div>
           )}
 
+          {/* Phase 3: Enhanced Error Display */}
+          {connectionError && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="flex items-center justify-between">
+                <span>⚠️ Voice error: {connectionError}</span>
+                <div className="flex space-x-2">
+                  <Button onClick={handleRetry} size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Retry
+                  </Button>
+                  <Button onClick={handleDismissError} size="sm" variant="outline">
+                    Choose Different Scenario
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Connection Status */}
           <div className="text-center mb-6">
             <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
@@ -370,28 +395,6 @@ const VoiceDemo = () => {
                     </p>
                   </div>
                 </Card>
-              </div>
-            </div>
-          )}
-
-          {/* Enhanced Error State */}
-          {connectionError && (
-            <div className="text-center space-y-4 p-6 bg-red-50 rounded-lg border border-red-200">
-              <div className="text-red-600 font-medium flex items-center justify-center gap-2">
-                <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
-                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                </div>
-                Connection Failed
-              </div>
-              <p className="text-red-700 text-sm max-w-md mx-auto">{connectionError}</p>
-              <div className="flex justify-center space-x-3">
-                <Button onClick={handleRetry} variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Try Again
-                </Button>
-                <Button onClick={resetDemo} variant="outline">
-                  Choose Different Scenario
-                </Button>
               </div>
             </div>
           )}

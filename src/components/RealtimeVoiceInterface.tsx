@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, MessageSquare, Send, Bug } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, MessageSquare, Send, Bug, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useToast } from '@/components/ui/use-toast';
 import AudioDiagnostics from './AudioDiagnostics';
@@ -98,6 +99,11 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
     retryConnection();
   };
 
+  const handleDismissError = () => {
+    // Clear error by attempting to disconnect and reset state
+    disconnect();
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto p-6 space-y-6">
       <div className="text-center">
@@ -108,6 +114,25 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
           Powered by OpenAI's Realtime API - Natural voice conversations with instant feedback
         </p>
       </div>
+
+      {/* Phase 3: Enhanced Error Display */}
+      {connectionError && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription className="flex items-center justify-between">
+            <span>⚠️ Voice error: {connectionError}</span>
+            <div className="flex space-x-2">
+              <Button onClick={handleRetry} size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Retry
+              </Button>
+              <Button onClick={handleDismissError} size="sm" variant="outline">
+                Dismiss
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="voice" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
@@ -156,16 +181,6 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
                 </Button>
               )}
             </div>
-
-            {/* Connection Error */}
-            {connectionError && (
-              <div className="mt-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-red-700 dark:text-red-300 text-sm">{connectionError}</p>
-                <Button onClick={handleRetry} size="sm" className="mt-2">
-                  Retry Connection
-                </Button>
-              </div>
-            )}
           </Card>
 
           {/* Voice Controls */}
@@ -305,6 +320,7 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
           <li>• Try the "Test Audio Output" button to verify your speakers work</li>
           <li>• If AudioContext is suspended, click "Resume" or interact with the page</li>
           <li>• Check the Debug Logs tab for detailed technical information</li>
+          <li>• Use the Retry button if you encounter connection errors</li>
         </ul>
       </Card>
     </div>

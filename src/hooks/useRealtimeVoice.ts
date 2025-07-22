@@ -9,16 +9,23 @@ import type {
   OpenAIWebSocketEvent,
 } from '@/types/realtimeEvents';
 
-/**
- * Possible error payloads emitted by the realtime voice edge function.
- *
- * - `{ type: 'error', error: 'Invalid JSON from OpenAI' }`
- * - `{ type: 'error', error: 'OpenAI connection failed' }`
- * - `{ type: 'error', error: 'Invalid message format' }`
- * - `{ type: 'error', error: 'Connection setup failed: <reason>' }`
- */
+// Phase 1: Event Standardization
+const EVENTS = {
+  CONNECTION_ESTABLISHED: 'connection.established',
+  SESSION_CREATED: 'session.created',
+  SESSION_UPDATED: 'session.updated',
+  AUDIO_DELTA: 'response.audio.delta',
+  AUDIO_DONE: 'response.audio.done',
+  AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
+  SPEECH_STARTED: 'input_audio_buffer.speech_started',
+  SPEECH_STOPPED: 'input_audio_buffer.speech_stopped',
+  TRANSCRIPTION_COMPLETED: 'conversation.item.input_audio_transcription.completed',
+  RESPONSE_CREATED: 'response.created',
+  CONNECTION_CLOSED: 'connection.closed',
+  ERROR: 'error'
+} as const;
 
-// Simplified connection state enum
+// Connection state enum
 enum ConnectionState {
   CLOSED = 'CLOSED',
   OPENING = 'OPENING',
@@ -26,7 +33,83 @@ enum ConnectionState {
   STARTED = 'STARTED'
 }
 
+// State machine actions
+type StateAction = 
+  | { type: 'OPENING' }
+  | { type: 'CONFIGURED' }
+  | { type: 'STARTED' }
+  | { type: 'CLOSED' }
+  | { type: 'RETRY' };
 
+interface ConnectionStateContext {
+  state: ConnectionState;
+  retryCount: number;
+  lastError: string | null;
+  sequenceId: number;
+}
+
+const initialState: ConnectionStateContext = {
+  state: ConnectionState.CLOSED,
+  retryCount: 0,
+  lastError: null,
+  sequenceId: 0
+};
+
+const maxRetries = 3;
+
+// Phase 2: State Machine Hardening
+function connectionReducer(state: ConnectionStateContext, action: StateAction): ConnectionStateContext {
+  const timestamp = new Date().toISOString();
+  
+  switch (action.type) {
+    case 'OPENING':
+      if (state.state !== ConnectionState.CLOSED) {
+        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> OPENING`);
+        return state;
+      }
+      console.debug(`🔄 [${timestamp}] STATE -> OPENING (sequence: ${state.sequenceId + 1})`);
+      return { 
+        ...state, 
+        state: ConnectionState.OPENING, 
+        sequenceId: state.sequenceId + 1,
+        lastError: null 
+      };
+      
+    case 'CONFIGURED':
+      if (state.state !== ConnectionState.OPENING) {
+        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> CONFIGURED`);
+        return state;
+      }
+      console.debug(`✅ [${timestamp}] STATE -> CONFIGURED (sequence: ${state.sequenceId})`);
+      return { ...state, state: ConnectionState.CONFIGURED, retryCount: 0 };
+      
+    case 'STARTED':
+      if (state.state !== ConnectionState.CONFIGURED) {
+        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> STARTED`);
+        return state;
+      }
+      console.debug(`🎭 [${timestamp}] STATE -> STARTED (sequence: ${state.sequenceId})`);
+      return { ...state, state: ConnectionState.STARTED };
+      
+    case 'CLOSED':
+      console.debug(`🔴 [${timestamp}] STATE -> CLOSED (sequence: ${state.sequenceId})`);
+      return { ...state, state: ConnectionState.CLOSED };
+      
+    case 'RETRY':
+      if (state.retryCount >= maxRetries) {
+        console.error(`❌ [${timestamp}] Max retries exceeded (${maxRetries})`);
+        return { ...state, state: ConnectionState.CLOSED };
+      }
+      console.debug(`🔄 [${timestamp}] RETRY attempt ${state.retryCount + 1}/${maxRetries}`);
+      return { ...state, retryCount: state.retryCount + 1 };
+      
+    default:
+      return state;
+  }
+}
+
+export const useRealtimeVoice = () => {
+  const [state, dispatch] = useReducer(connectionReducer, initialState);
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -36,8 +119,8 @@ enum ConnectionState {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   
   // Derived states for backward compatibility
-  const isConnected = connectionState === ConnectionState.CONFIGURED || connectionState === ConnectionState.STARTED;
-  const isConnecting = connectionState === ConnectionState.OPENING;
+  const isConnected = state.state === ConnectionState.CONFIGURED || state.state === ConnectionState.STARTED;
+  const isConnecting = state.state === ConnectionState.OPENING;
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -46,8 +129,18 @@ enum ConnectionState {
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const scenarioRef = useRef<Scenario | null>(null);
+  const shouldReconnectRef = useRef<boolean>(false);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
   const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
+  const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Phase 1: Structured logging helper
+  const logEvent = useCallback((direction: '▷' | '◁', event: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const sequenceInfo = `[seq:${state.sequenceId}]`;
+    console.debug(`${direction} [${timestamp}] ${sequenceInfo} ${event}`, data || '');
+  }, [state.sequenceId]);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -61,7 +154,7 @@ enum ConnectionState {
 
   const initializeAudioContext = async (): Promise<void> => {
     try {
-      audioDebugger.log("Initializing audio context...");
+      logEvent('▷', 'AUDIO_INIT', 'Initializing audio context');
       
       // Create AudioContext with proper sample rate
       audioContextRef.current = new AudioContext({ 
@@ -83,48 +176,72 @@ enum ConnectionState {
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
       audioQueueRef.current.setVolume(0.8);
       
-      audioDebugger.log("Audio context initialized successfully");
+      logEvent('▷', 'AUDIO_INIT_SUCCESS', 'Audio context initialized');
     } catch (error) {
-      audioDebugger.error("Failed to initialize audio context", error);
+      logEvent('▷', 'AUDIO_INIT_ERROR', error);
       throw new Error("Failed to initialize audio system");
     }
   };
 
-  // Promise-based message sending with acknowledgment
-  const sendAndAwaitAck = useCallback((event: ClientWebSocketEvent): Promise<void> => {
+  // Phase 2: Sequence tracking for critical operations
+  const sendAndAwaitResponse = useCallback((event: ClientWebSocketEvent, expectedResponseType?: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
         reject(new Error('WebSocket not connected'));
         return;
       }
 
-      audioDebugger.log(`📤 Sending event: ${event.type}`);
+      const sequenceId = state.sequenceId;
+      logEvent('◁', 'SEND_EVENT', { type: event.type, sequenceId });
+      
+      // Send the event
       wsRef.current.send(JSON.stringify(event));
       
-      // For most events, we resolve immediately since OpenAI doesn't send explicit acks
-      // We'll use a small delay to ensure message is processed
-      setTimeout(() => {
+      // If we're expecting a specific response, wait for it
+      if (expectedResponseType) {
+        const responseHandler = (messageEvent: MessageEvent) => {
+          try {
+            const data = JSON.parse(messageEvent.data);
+            if (data.type === expectedResponseType) {
+              wsRef.current?.removeEventListener('message', responseHandler);
+              logEvent('▷', 'RESPONSE_RECEIVED', { type: expectedResponseType, sequenceId });
+              resolve();
+            }
+          } catch (error) {
+            // Continue listening for other messages
+          }
+        };
+        
+        wsRef.current.addEventListener('message', responseHandler);
+        
+        // Add timeout for safety
+        setTimeout(() => {
+          wsRef.current?.removeEventListener('message', responseHandler);
+          reject(new Error(`Response timeout for ${expectedResponseType}`));
+        }, 10000);
+      } else {
+        // For events that don't need a response, resolve immediately
         resolve();
-      }, 100);
+      }
     });
-  }, []);
+  }, [state.sequenceId, logEvent]);
 
   // Test edge function health before connecting
   const testEdgeFunctionHealth = async (): Promise<boolean> => {
     try {
-      audioDebugger.log("🏥 Testing edge function health...");
+      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
       const { data, error } = await supabase.functions.invoke('realtime-voice', {
         body: { action: 'health' }
       });
       
       if (error) {
-        audioDebugger.error("❌ Edge function health check failed", error);
+        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
         setConnectionError(`Edge function error: ${error.message}`);
         return false;
       }
       
       if (data) {
-        audioDebugger.log("✅ Edge function health check passed", data);
+        logEvent('▷', 'HEALTH_CHECK_SUCCESS', data);
         
         if (!data.hasOpenAIKey) {
           setConnectionError('OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your secrets.');
@@ -136,7 +253,7 @@ enum ConnectionState {
       
       return false;
     } catch (error) {
-      audioDebugger.error("❌ Edge function health check error", error);
+      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
       setConnectionError('Cannot reach edge function. Please check your connection.');
       return false;
     }
@@ -144,12 +261,12 @@ enum ConnectionState {
 
   const sendScenarioOpening = useCallback(async (scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      audioDebugger.log("❌ Cannot send scenario opening - WebSocket not connected");
+      logEvent('▷', 'SCENARIO_OPENING_ERROR', 'WebSocket not connected');
       return;
     }
 
     try {
-      audioDebugger.log(`🎭 Starting scenario opening sequence for: ${scenario.title}`);
+      logEvent('▷', 'SCENARIO_OPENING_START', `Starting scenario: ${scenario.title}`);
       
       // Step 1: Send system message with clear instructions
       const systemEvent: ClientWebSocketEvent = {
@@ -170,8 +287,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
       };
 
-      await sendAndAwaitAck(systemEvent);
-      audioDebugger.log("✅ System message sent and acknowledged");
+      await sendAndAwaitResponse(systemEvent);
+      logEvent('▷', 'SCENARIO_SYSTEM_MESSAGE_SENT', 'System message sent');
 
       // Step 2: Send trigger message
       const triggerEvent: ClientWebSocketEvent = {
@@ -188,23 +305,71 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
       };
 
-      await sendAndAwaitAck(triggerEvent);
-      audioDebugger.log("✅ Trigger message sent and acknowledged");
+      await sendAndAwaitResponse(triggerEvent);
+      logEvent('▷', 'SCENARIO_TRIGGER_SENT', 'Trigger message sent');
 
       // Step 3: Request response
       const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
-      await sendAndAwaitAck(responseEvent);
-      audioDebugger.log("✅ Response creation requested - AI should start speaking now!");
+      await sendAndAwaitResponse(responseEvent, EVENTS.RESPONSE_CREATED);
+      logEvent('▷', 'SCENARIO_RESPONSE_REQUESTED', 'Response creation requested');
 
       dispatch({ type: 'STARTED' });
       
     } catch (error) {
-      audioDebugger.error("❌ Failed to send scenario opening", error);
+      logEvent('▷', 'SCENARIO_OPENING_ERROR', error);
       setConnectionError('Failed to start scenario. Please try again.');
     }
-  }, [sendAndAwaitAck]);
+  }, [sendAndAwaitResponse, logEvent]);
+
+  // Phase 3: Connection health monitoring
+  const startHealthCheck = useCallback(() => {
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current);
+    }
+    
+    healthCheckRef.current = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        // Send a ping to check connection health
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'ping' }));
+          logEvent('◁', 'HEALTH_PING', 'Sent health check ping');
+        } catch (error) {
+          logEvent('▷', 'HEALTH_PING_ERROR', error);
+          // Connection is broken, trigger reconnection
+          handleRetry();
+        }
+      }
+    }, 30000); // Check every 30 seconds
+  }, [logEvent]);
+
+  const stopHealthCheck = useCallback(() => {
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current);
+      healthCheckRef.current = null;
+    }
+  }, []);
+
+  const scheduleReconnect = useCallback((reason: string) => {
+    if (!shouldReconnectRef.current) return;
+    
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+    
+    const delay = Math.min(1000 * Math.pow(2, retryAttempts), 10000);
+    logEvent('▷', 'RECONNECT_SCHEDULED', `Reconnecting in ${delay}ms due to: ${reason}`);
+    
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (shouldReconnectRef.current && retryAttempts < maxRetries) {
+        setRetryAttempts(prev => prev + 1);
+        connect(currentScenario ?? undefined, true);
+      }
+    }, delay);
+  }, [retryAttempts, currentScenario, logEvent]);
+
+  const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {
     try {
-      audioDebugger.log("🚀 Starting connection process...");
+      logEvent('▷', 'CONNECTION_START', 'Starting connection process');
       if (!skipDispatch) {
         dispatch({ type: 'OPENING' });
       }
@@ -221,7 +386,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       if (scenario) {
         setCurrentScenario(scenario);
         scenarioRef.current = scenario;
-        audioDebugger.log(`Selected scenario: ${scenario.title}`);
+        logEvent('▷', 'SCENARIO_SET', `Selected scenario: ${scenario.title}`);
       }
       
       // Test edge function health first
@@ -236,63 +401,63 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
       // Use the correct WebSocket URL for Supabase Edge Functions
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
-      audioDebugger.log(`Connecting to: ${wsUrl}`);
+      logEvent('▷', 'WEBSOCKET_CONNECTING', `Connecting to: ${wsUrl}`);
       
       wsRef.current = new WebSocket(wsUrl);
 
       wsRef.current.onopen = () => {
-        audioDebugger.log('🟢 WebSocket connected to Supabase edge function');
+        logEvent('▷', 'WEBSOCKET_CONNECTED', 'WebSocket connected to Supabase edge function');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
+        startHealthCheck();
       };
 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: OpenAIWebSocketEvent = JSON.parse(event.data) as OpenAIWebSocketEvent;
-          audioDebugger.log(`📨 ▷ GOT EVENT: ${data.type}`);
+          logEvent('▷', 'EVENT_RECEIVED', { type: data.type, sequenceId: state.sequenceId });
 
           switch (data.type) {
-            case 'connection.established':
-              audioDebugger.log('✅ OpenAI connection established');
-              // Don't set as connected yet, wait for session.update
+            case EVENTS.CONNECTION_ESTABLISHED:
+              logEvent('▷', 'CONNECTION_ESTABLISHED', 'OpenAI connection established');
               setConnectionError(null);
               break;
 
-            case 'session.create':
-              audioDebugger.log('⚙️ OpenAI session created');
+            case EVENTS.SESSION_CREATED:
+              logEvent('▷', 'SESSION_CREATED', 'OpenAI session created');
               break;
 
-            case 'session.update':
-              audioDebugger.log('✅ Session configuration updated - READY FOR SCENARIO');
+            case EVENTS.SESSION_UPDATED:
+              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY FOR SCENARIO');
               dispatch({ type: 'CONFIGURED' });
               
               // Automatically start scenario if we have one - use ref to avoid race condition
               if (scenarioRef.current) {
-                audioDebugger.log(`🎭 Auto-starting scenario: ${scenarioRef.current.title}`);
+                logEvent('▷', 'AUTO_START_SCENARIO', `Auto-starting scenario: ${scenarioRef.current.title}`);
                 await sendScenarioOpening(scenarioRef.current);
               }
               break;
 
-            case 'input_audio_buffer.speech_started':
-              audioDebugger.log('🎤 User started speaking');
+            case EVENTS.SPEECH_STARTED:
+              logEvent('▷', 'SPEECH_STARTED', 'User started speaking');
               setIsUserSpeaking(true);
               break;
 
-            case 'input_audio_buffer.speech_stopped':
-              audioDebugger.log('🤐 User stopped speaking');
+            case EVENTS.SPEECH_STOPPED:
+              logEvent('▷', 'SPEECH_STOPPED', 'User stopped speaking');
               setIsUserSpeaking(false);
               break;
 
-            case 'conversation.item.input_audio_transcription.completed':
+            case EVENTS.TRANSCRIPTION_COMPLETED:
               if (data.transcript) {
-                audioDebugger.log(`📝 Received transcript: ${data.transcript}`);
+                logEvent('▷', 'TRANSCRIPTION_COMPLETED', `Transcript: ${data.transcript}`);
                 setTranscript(data.transcript);
               }
               break;
 
-            case 'response.audio.delta':
+            case EVENTS.AUDIO_DELTA:
               if (data.delta && audioQueueRef.current && audioContextRef.current) {
                 try {
                   // Ensure audio context is running
@@ -304,29 +469,29 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
                   await audioQueueRef.current.addToQueue(audioData);
                   setIsAISpeaking(true);
                 } catch (audioError) {
-                  audioDebugger.error('Error processing audio delta', audioError);
+                  logEvent('▷', 'AUDIO_DELTA_ERROR', audioError);
                 }
               }
               break;
 
-            case 'response.audio.done':
-              audioDebugger.log('🔇 AI finished speaking');
+            case EVENTS.AUDIO_DONE:
+              logEvent('▷', 'AUDIO_DONE', 'AI finished speaking');
               setIsAISpeaking(false);
               break;
 
-            case 'response.audio_transcript.delta':
+            case EVENTS.AUDIO_TRANSCRIPT_DELTA:
               if (data.delta) {
                 setAiResponse(prev => prev + data.delta);
               }
               break;
 
-            case 'response.created':
-              audioDebugger.log('🤖 AI response started');
+            case EVENTS.RESPONSE_CREATED:
+              logEvent('▷', 'RESPONSE_CREATED', 'AI response started');
               setAiResponse('');
               break;
 
-            case 'error':
-              audioDebugger.error('❌ Realtime API error', data.error);
+            case EVENTS.ERROR:
+              logEvent('▷', 'ERROR_RECEIVED', data.error);
               let errorMessage = 'Unknown error occurred';
               
               if (typeof data.error === 'object' && data.error.message) {
@@ -335,7 +500,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
                 errorMessage = data.error;
               }
               
-              // Categorize errors for better user experience
+              // Phase 3: Enhanced error categorization
               if (errorMessage.includes('rate_limit')) {
                 setConnectionError('OpenAI API rate limit exceeded. Please wait a moment and try again.');
               } else if (errorMessage.includes('insufficient_quota')) {
@@ -350,23 +515,27 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               dispatch({ type: 'CLOSED' });
               break;
 
-            case 'connection.closed':
-              audioDebugger.log('🔴 OpenAI connection closed');
+            case EVENTS.CONNECTION_CLOSED:
+              logEvent('▷', 'CONNECTION_CLOSED', 'OpenAI connection closed');
               dispatch({ type: 'CLOSED' });
               setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
               break;
 
+            case 'pong':
+              logEvent('▷', 'HEALTH_PONG', 'Received health check pong');
+              break;
+
             default:
-              audioDebugger.log(`ℹ️ Unhandled message type: ${data.type}`);
+              logEvent('▷', 'UNHANDLED_EVENT', `Unhandled message type: ${data.type}`);
           }
         } catch (error) {
-          audioDebugger.error('❌ Error parsing message', error);
+          logEvent('▷', 'MESSAGE_PARSE_ERROR', error);
           setConnectionError('Invalid response from server. Please try again.');
         }
       };
 
       wsRef.current.onerror = (error) => {
-        audioDebugger.error('❌ WebSocket error', error);
+        logEvent('▷', 'WEBSOCKET_ERROR', error);
         setConnectionError('WebSocket connection failed. Please check your internet connection and try again.');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
@@ -375,14 +544,14 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       };
 
       wsRef.current.onclose = (event) => {
-        audioDebugger.log(`🔴 WebSocket closed: ${event.code} ${event.reason}`);
+        logEvent('▷', 'WEBSOCKET_CLOSED', `Code: ${event.code}, Reason: ${event.reason}`);
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         
+        stopHealthCheck();
         dispatch({ type: 'CLOSED' });
-        handleRetry();
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
@@ -407,47 +576,37 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         scheduleReconnect('close');
       };
 
-    } catch (error) {
-      audioDebugger.error('❌ Error connecting to realtime voice', error);
-      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
-      dispatch({ type: 'CLOSED' });
-      handleRetry();
-    }
-  }, [sendScenarioOpening, connectionState]);
-
-  const handleRetry = useCallback(() => {
-    if (state.retryCount < maxRetries) {
-      audioDebugger.log(`Retrying connection (${state.retryCount + 1}/${maxRetries})`);
-      dispatch({ type: 'RETRY' });
-      connect(currentScenario ?? undefined, true);
-    } else {
-      audioDebugger.error('Max retries reached');
-      dispatch({ type: 'CLOSED' });
-    }
-  }, [state.retryCount, maxRetries, connect, currentScenario]);
-
-  useEffect(() => {
-    if (connectionState === ConnectionState.OPENING) {
+      // Phase 3: Global timeout watchdog
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
       }
       connectionTimeoutRef.current = setTimeout(() => {
-        audioDebugger.error(`Connection timeout after 20 seconds`);
+        logEvent('▷', 'CONNECTION_TIMEOUT', 'Connection timeout after 20 seconds');
         setConnectionError('Connection timeout. The server may be overloaded. Please try again.');
         if (wsRef.current) {
           wsRef.current.close();
         }
         handleRetry();
       }, 20000);
-    }
 
-    return () => {
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-        connectionTimeoutRef.current = null;
-      }
-    };
-  }, [connectionState, handleRetry]);
+    } catch (error) {
+      logEvent('▷', 'CONNECTION_ERROR', error);
+      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
+      dispatch({ type: 'CLOSED' });
+      handleRetry();
+    }
+  }, [sendScenarioOpening, state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect]);
+
+  const handleRetry = useCallback(() => {
+    if (state.retryCount < maxRetries) {
+      logEvent('▷', 'RETRY_ATTEMPT', `Retrying connection (${state.retryCount + 1}/${maxRetries})`);
+      dispatch({ type: 'RETRY' });
+      connect(currentScenario ?? undefined, true);
+    } else {
+      logEvent('▷', 'MAX_RETRIES_EXCEEDED', 'Max retries reached');
+      dispatch({ type: 'CLOSED' });
+    }
+  }, [state.retryCount, maxRetries, connect, currentScenario, logEvent]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -455,7 +614,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
 
     try {
-      audioDebugger.log("Starting audio capture...");
+      logEvent('▷', 'AUDIO_CAPTURE_START', 'Starting audio capture');
       
       if (!audioContextRef.current) {
         await initializeAudioContext();
@@ -475,34 +634,34 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
       await recorderRef.current.start();
       setIsRecording(true);
-      audioDebugger.log("Audio capture started successfully");
+      logEvent('▷', 'AUDIO_CAPTURE_SUCCESS', 'Audio capture started successfully');
     } catch (error) {
-      audioDebugger.error('Error starting audio capture', error);
+      logEvent('▷', 'AUDIO_CAPTURE_ERROR', error);
       throw error;
     }
-  }, []);
+  }, [logEvent]);
 
   const stopAudioCapture = useCallback(() => {
     if (recorderRef.current) {
       try {
-        audioDebugger.log("Stopping audio capture...");
+        logEvent('▷', 'AUDIO_CAPTURE_STOP', 'Stopping audio capture');
         recorderRef.current.stop();
       } catch (error) {
-        audioDebugger.error("Error stopping audio capture", error);
+        logEvent('▷', 'AUDIO_CAPTURE_STOP_ERROR', error);
       } finally {
         recorderRef.current = null;
         setIsRecording(false);
       }
     }
-  }, []);
+  }, [logEvent]);
 
   const sendTextMessage = useCallback((text: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      audioDebugger.log("Cannot send text message - WebSocket not connected");
+      logEvent('▷', 'TEXT_MESSAGE_ERROR', 'Cannot send text message - WebSocket not connected');
       return;
     }
 
-    audioDebugger.log(`Sending text message: ${text}`);
+    logEvent('◁', 'TEXT_MESSAGE_SEND', `Sending text message: ${text}`);
     const event: ClientWebSocketEvent = {
       type: 'conversation.item.create',
       item: {
@@ -520,21 +679,21 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     wsRef.current.send(JSON.stringify(event));
     const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
     wsRef.current.send(JSON.stringify(responseEvent));
-  }, []);
+  }, [logEvent]);
 
   const setVolume = useCallback((volume: number) => {
     if (gainNodeRef.current) {
       gainNodeRef.current.gain.value = volume;
-      audioDebugger.log(`Volume set to ${volume}`);
+      logEvent('▷', 'VOLUME_CHANGED', `Volume set to ${volume}`);
     }
     if (audioQueueRef.current) {
       audioQueueRef.current.setVolume(volume);
     }
-  }, []);
+  }, [logEvent]);
 
   const disconnect = useCallback(() => {
     try {
-      audioDebugger.log("🔌 Disconnecting...");
+      logEvent('▷', 'DISCONNECT_START', 'Disconnecting...');
       stopAudioCapture();
       shouldReconnectRef.current = false;
       if (reconnectTimeoutRef.current) {
@@ -547,11 +706,13 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         connectionTimeoutRef.current = null;
       }
       
+      stopHealthCheck();
+      
       if (audioQueueRef.current) {
         try {
           audioQueueRef.current.stop();
         } catch (error) {
-          audioDebugger.error("Error stopping audio queue", error);
+          logEvent('▷', 'AUDIO_QUEUE_STOP_ERROR', error);
         }
         audioQueueRef.current = null;
       }
@@ -560,7 +721,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         try {
           wsRef.current.close();
         } catch (error) {
-          audioDebugger.error("Error closing WebSocket", error);
+          logEvent('▷', 'WEBSOCKET_CLOSE_ERROR', error);
         }
         wsRef.current = null;
       }
@@ -569,7 +730,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         try {
           audioContextRef.current.close();
         } catch (error) {
-          audioDebugger.error("Error closing audio context", error);
+          logEvent('▷', 'AUDIO_CONTEXT_CLOSE_ERROR', error);
         }
         audioContextRef.current = null;
       }
@@ -587,16 +748,24 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         setAiResponse('');
         setCurrentScenario(null);
         setConnectionError(null);
+        logEvent('▷', 'DISCONNECT_SUCCESS', 'Disconnected successfully');
       } catch (error) {
         // Component might be unmounted, ignore state updates
-        audioDebugger.error("Error updating state during disconnect", error);
+        logEvent('▷', 'DISCONNECT_STATE_ERROR', error);
       }
     } catch (error) {
-      audioDebugger.error("Error during disconnect", error);
+      logEvent('▷', 'DISCONNECT_ERROR', error);
     }
-  }, [stopAudioCapture]);
+  }, [stopAudioCapture, stopHealthCheck, logEvent]);
 
   const retryConnection = useCallback(() => {
+    logEvent('▷', 'RETRY_CONNECTION', 'User requested retry');
+    if (currentScenario) {
+      connect(currentScenario);
+    } else {
+      connect();
+    }
+  }, [connect, currentScenario, logEvent]);
 
   useEffect(() => {
     return () => {
