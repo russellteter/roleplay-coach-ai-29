@@ -494,8 +494,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               logEvent('▷', 'ERROR_RECEIVED', data.error);
               let errorMessage = 'Unknown error occurred';
               
-              if (typeof data.error === 'object' && data.error.message) {
-                errorMessage = data.error.message;
+              if (typeof data.error === 'object' && data.error !== null && 'message' in data.error) {
+                errorMessage = (data.error as { message: string }).message;
               } else if (typeof data.error === 'string') {
                 errorMessage = data.error;
               }

@@ -29,8 +29,17 @@ export interface SessionCreate {
   type: 'session.create';
 }
 
+export interface SessionCreated {
+  type: 'session.created';
+}
+
 export interface SessionUpdate {
   type: 'session.update';
+  session?: unknown;
+}
+
+export interface SessionUpdated {
+  type: 'session.updated';
   session?: unknown;
 }
 
@@ -76,10 +85,16 @@ export interface ConnectionClosed {
   reason: string;
 }
 
+export interface PongEvent {
+  type: 'pong';
+}
+
 export type OpenAIWebSocketEvent =
   | ConnectionEstablished
   | SessionCreate
+  | SessionCreated
   | SessionUpdate
+  | SessionUpdated
   | SpeechStarted
   | SpeechStopped
   | InputAudioTranscriptionCompleted
@@ -88,4 +103,5 @@ export type OpenAIWebSocketEvent =
   | AudioTranscriptDelta
   | ResponseCreated
   | ErrorEvent
-  | ConnectionClosed;
+  | ConnectionClosed
+  | PongEvent;
