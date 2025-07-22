@@ -26,49 +26,7 @@ enum ConnectionState {
   STARTED = 'STARTED'
 }
 
-interface ConnectionReducerState {
-  status: ConnectionState;
-  retryCount: number;
-}
 
-type ConnectionAction =
-  | { type: 'OPENING' }
-  | { type: 'CONFIGURED' }
-  | { type: 'STARTED' }
-  | { type: 'CLOSED' }
-  | { type: 'TIMEOUT' }
-  | { type: 'RETRY' };
-
-const connectionReducer = (
-  state: ConnectionReducerState,
-  action: ConnectionAction
-): ConnectionReducerState => {
-  switch (action.type) {
-    case 'OPENING':
-      return { ...state, status: ConnectionState.OPENING };
-    case 'CONFIGURED':
-      return { status: ConnectionState.CONFIGURED, retryCount: 0 };
-    case 'STARTED':
-      return { status: ConnectionState.STARTED, retryCount: 0 };
-    case 'CLOSED':
-      return { status: ConnectionState.CLOSED, retryCount: 0 };
-    case 'TIMEOUT':
-    case 'RETRY':
-      return {
-        status: ConnectionState.OPENING,
-        retryCount: state.retryCount + 1
-      };
-    default:
-      return state;
-  }
-};
-
-export const useRealtimeVoice = () => {
-  const [state, dispatch] = useReducer(connectionReducer, {
-    status: ConnectionState.CLOSED,
-    retryCount: 0
-  });
-  const connectionState = state.status;
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
@@ -87,8 +45,9 @@ export const useRealtimeVoice = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
-  const maxRetries = 3;
   const scenarioRef = useRef<Scenario | null>(null);
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -244,14 +203,17 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       setConnectionError('Failed to start scenario. Please try again.');
     }
   }, [sendAndAwaitAck]);
-
-  const connect = useCallback(async (scenario?: Scenario, skipDispatch = false): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
       if (!skipDispatch) {
         dispatch({ type: 'OPENING' });
       }
       setConnectionError(null);
+      shouldReconnectRef.current = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       setAiResponse('');
       setTranscript('');
       
@@ -410,8 +372,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        dispatch({ type: 'CLOSED' });
-        handleRetry();
       };
 
       wsRef.current.onclose = (event) => {
@@ -444,6 +404,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         } else {
           setConnectionError(`Connection closed (${event.code}). Please try again.`);
         }
+        scheduleReconnect('close');
       };
 
     } catch (error) {
@@ -575,6 +536,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     try {
       audioDebugger.log("🔌 Disconnecting...");
       stopAudioCapture();
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -655,6 +621,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     sendTextMessage,
     setVolume,
     disconnect,
-    retryConnection
+    retryConnection,
+    retryAttempts,
+    lastFailureTime
   };
 };
