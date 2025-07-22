@@ -48,7 +48,7 @@ export const useScenarioPrompts = () => {
         description: item.description,
         prompt: item.prompt_text, // Map prompt_text to prompt
         openingMessage: item.opening_message,
-        category: item.category as 'healthcare' | 'customer-service' | 'leadership' | 'general'
+        category: item.category as 'healthcare' | 'customer-service' | 'compliance-hr'
       })) || [];
 
       setScenarios(mappedScenarios);
