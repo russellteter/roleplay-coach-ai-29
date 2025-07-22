@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Scenario } from '@/utils/scenarioPrompts';
+import { Scenario, HEALTHCARE_SCENARIOS } from '@/utils/scenarioPrompts';
 
 export interface DatabaseScenario {
   id: string;
@@ -27,32 +27,13 @@ export const useScenarioPrompts = () => {
       setLoading(true);
       setError(null);
 
-      const { data, error: supabaseError } = await supabase
-        .from('scenario_prompts')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (supabaseError) {
-        console.error('Error fetching scenarios:', supabaseError);
-        setError('Failed to load scenarios from database');
-        return;
-      }
-
-      if (data) {
-        const formattedScenarios: Scenario[] = data.map((item: DatabaseScenario) => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          prompt: item.prompt_text,
-          openingMessage: item.opening_message,
-          category: item.category as 'healthcare' | 'customer-service' | 'leadership' | 'general'
-        }));
-        
-        setScenarios(formattedScenarios);
-      }
+      // Use static data for now since Supabase table doesn't exist yet
+      setScenarios(HEALTHCARE_SCENARIOS);
+      
     } catch (err) {
       console.error('Error in fetchScenarios:', err);
       setError('An unexpected error occurred');
+      setScenarios(HEALTHCARE_SCENARIOS);
     } finally {
       setLoading(false);
     }
