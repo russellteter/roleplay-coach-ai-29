@@ -5,7 +5,7 @@ export interface Scenario {
   description: string;
   prompt: string;
   openingMessage: string;
-  category: 'healthcare' | 'customer-service' | 'compliance-hr';
+  category: string; // Changed from union type to string to match database
 }
 
 // Legacy scenarios kept as fallback only - database is now primary source

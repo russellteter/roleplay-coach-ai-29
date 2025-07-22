@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -99,7 +98,7 @@ export const useRealtimeVoice = () => {
       connectionTimeoutRef.current = setTimeout(() => {
         if (wsRef.current?.readyState !== WebSocket.OPEN) {
           audioDebugger.error('Connection timeout after 15 seconds');
-          setConnectionError('Connection timeout after 15 seconds');
+          setConnectionError('Connection timeout. Please try again.');
           if (wsRef.current) {
             wsRef.current.close();
           }
@@ -127,12 +126,12 @@ export const useRealtimeVoice = () => {
               setIsConnecting(false);
               setConnectionError(null);
               
-              // Set current scenario and send opening if we have one
+              // Start scenario immediately if we have one
               if (selectedScenario) {
                 audioDebugger.log(`Starting scenario: ${selectedScenario.title}`);
                 setTimeout(() => {
                   sendScenarioOpening(selectedScenario);
-                }, 1000);
+                }, 500); // Reduced delay
               }
               break;
 
@@ -211,7 +210,7 @@ export const useRealtimeVoice = () => {
                 : typeof data.error === 'string' 
                 ? data.error 
                 : JSON.stringify(data.error);
-              setConnectionError(errorMessage);
+              setConnectionError(`AI Service Error: ${errorMessage}`);
               setIsConnecting(false);
               break;
 
@@ -232,7 +231,7 @@ export const useRealtimeVoice = () => {
 
       wsRef.current.onerror = (error) => {
         audioDebugger.error('WebSocket error', error);
-        setConnectionError('WebSocket connection error');
+        setConnectionError('WebSocket connection failed. Please check your internet connection.');
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -255,31 +254,22 @@ export const useRealtimeVoice = () => {
 
     } catch (error) {
       audioDebugger.error('Error connecting to realtime voice', error);
-      setConnectionError(error instanceof Error ? error.message : 'Connection failed');
+      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsConnected(false);
       setIsConnecting(false);
     }
   }, [selectedScenario]);
 
+  // Simplified scenario opening - remove complex instruction override
   const sendScenarioOpening = useCallback((scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       audioDebugger.log("Cannot send scenario opening - WebSocket not connected");
       return;
     }
 
-    audioDebugger.log(`Sending scenario opening for: ${scenario.title}`);
+    audioDebugger.log(`Sending simplified scenario opening for: ${scenario.title}`);
     
-    // Create the system instruction layer that overrides any step-by-step behavior
-    const systemInstructionLayer = `CRITICAL OVERRIDE: You must immediately begin this roleplay scenario by speaking the provided opening message aloud as your very first response. Do not ask setup questions, do not gather information first, and do not say "How can I help you?" or similar phrases. 
-
-ROLEPLAY INTRODUCTION PATTERN: Start by saying: "Hi there. This is a live role-play scenario designed to help you practice ${scenario.title}. In this exercise, I'll play the role of [your character from the scenario], and you'll play the role of [user's role from the scenario]. I'll describe the situation and then we'll begin. Just respond naturally as if this were a real conversation. If you have any quick questions before we begin, feel free to ask. Otherwise, I'll get us started now..."
-
-After this introduction, immediately deliver your opening message and stay in character throughout the conversation.
-
-SCENARIO DETAILS:
-${scenario.prompt}`;
-
-    // Send the enhanced system message with instruction override
+    // Send simple, clear system message
     const systemEvent = {
       type: 'conversation.item.create',
       item: {
@@ -288,13 +278,13 @@ ${scenario.prompt}`;
         content: [
           {
             type: 'text',
-            text: systemInstructionLayer
+            text: `You are a roleplay partner for professional training. ${scenario.prompt} Start by delivering this opening message verbally: "${scenario.openingMessage}"`
           }
         ]
       }
     };
 
-    // Send user message requesting the roleplay to begin
+    // Send user message to trigger the response
     const userEvent = {
       type: 'conversation.item.create',
       item: {
@@ -303,7 +293,7 @@ ${scenario.prompt}`;
         content: [
           {
             type: 'text',
-            text: `Please begin the roleplay scenario: ${scenario.title}. Start with the introduction pattern and then deliver your opening message: "${scenario.openingMessage}"`
+            text: `Please begin the roleplay scenario: ${scenario.title}`
           }
         ]
       }
@@ -313,6 +303,16 @@ ${scenario.prompt}`;
     wsRef.current.send(JSON.stringify(userEvent));
     wsRef.current.send(JSON.stringify({ type: 'response.create' }));
   }, []);
+
+  // Helper function to convert base64 to Uint8Array
+  const base64ToUint8Array = (base64: string): Uint8Array => {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  };
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {

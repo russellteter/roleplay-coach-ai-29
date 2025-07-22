@@ -30,8 +30,7 @@ export const useScenarioPrompts = () => {
         // Map the data to ensure consistent category naming
         const mappedScenarios = data?.map((scenario: any) => ({
           ...scenario,
-          // Handle both 'customer-service' and 'customer-support' naming
-          category: scenario.category === 'customer-service' ? 'customer-support' : scenario.category
+          openingMessage: scenario.opening_message || scenario.openingMessage
         })) || [];
 
         setScenarios(mappedScenarios);
