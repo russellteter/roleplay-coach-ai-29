@@ -1,19 +1,25 @@
 
+
 import { Card } from "@/components/ui/card";
-import { Brain, Volume2, Zap } from "lucide-react";
+import { Brain, Volume2, Zap, Users } from "lucide-react";
 import CompactVoiceInterface from "@/components/CompactVoiceInterface";
 
 const VoiceAISection = () => {
   const features = [
     {
       icon: Brain,
-      title: "Advanced AI Understanding",
-      description: "Context-aware responses that understand nuance, emotion, and conversation flow."
+      title: "Scenario-Based Training",
+      description: "Pre-built healthcare communication scenarios with expert-crafted prompts for realistic practice."
     },
     {
       icon: Volume2,
       title: "Natural Voice Synthesis",
       description: "Human-like speech patterns with adjustable tone, pace, and personality settings."
+    },
+    {
+      icon: Users,
+      title: "Interactive Roleplay",
+      description: "Engage in realistic conversations with AI that responds naturally and provides constructive feedback."
     },
     {
       icon: Zap,
@@ -23,30 +29,30 @@ const VoiceAISection = () => {
   ];
 
   return (
-    <section id="voice-demo" className="py-20 bg-gradient-to-br from-primary/5 via-background to-accent/5 border-y border-border/50 relative overflow-hidden">
+    <section id="voice-demo" className="py-20 bg-gradient-to-br from-primary/5 via-background to-secondary/5 border-y border-border/50 relative overflow-hidden">
       {/* Subtle Background Elements */}
       <div className="absolute inset-0 opacity-40">
         <div className="absolute top-20 left-20 w-32 h-32 border border-primary/20 rounded-full"></div>
-        <div className="absolute bottom-20 right-20 w-24 h-24 border border-accent/20 rounded-full"></div>
+        <div className="absolute bottom-20 right-20 w-24 h-24 border border-secondary/20 rounded-full"></div>
         <div className="absolute top-1/2 left-1/3 w-16 h-16 border border-muted-foreground/10 rounded-full"></div>
       </div>
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-3 bg-card/80 backdrop-blur-sm px-6 py-3 rounded-full border border-border/50 mb-6 shadow-card">
+          <div className="inline-flex items-center gap-3 bg-card/80 backdrop-blur-sm px-6 py-3 rounded-full border border-border/50 mb-6 shadow-lg">
             <Zap className="h-5 w-5 text-primary" />
-            <span className="text-sm font-medium text-foreground">Powered by OpenAI's ChatGPT + Voice Mode</span>
+            <span className="text-sm font-medium text-foreground">Powered by OpenAI's GPT-4o + Realtime Voice</span>
           </div>
         </div>
         
         <div className="grid lg:grid-cols-2 gap-16 items-start">
           {/* Left Column - Content */}
           <div className="text-foreground">
-            <h2 className="text-4xl sm:text-5xl font-heading font-bold mb-6 leading-tight">
+            <h2 className="text-4xl sm:text-5xl font-bold mb-6 leading-tight text-foreground">
               Real-Time Voice Coaching
             </h2>
-            <p className="text-xl text-muted-foreground mb-8 leading-relaxed font-light">
-              Experience natural conversations with instant feedback. Our AI understands context, emotion, and provides coaching in real-time.
+            <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+              Experience natural conversations with instant feedback. Our AI understands context, emotion, and provides coaching through structured healthcare scenarios.
             </p>
 
             {/* Features */}
@@ -71,9 +77,9 @@ const VoiceAISection = () => {
 
           {/* Right Column - REAL-TIME VOICE DEMO */}
           <div className="relative">
-            <Card className="p-8 bg-card/50 backdrop-blur-xl border border-border/50 shadow-glow">
+            <Card className="p-8 bg-card/80 backdrop-blur-xl border border-border/50 shadow-2xl">
               <div className="text-center mb-6">
-                <h3 className="text-2xl font-heading font-bold text-foreground mb-3">
+                <h3 className="text-2xl font-bold text-foreground mb-3">
                   Try Live Voice Demo
                 </h3>
                 <p className="text-muted-foreground">
@@ -92,3 +98,4 @@ const VoiceAISection = () => {
 };
 
 export default VoiceAISection;
+

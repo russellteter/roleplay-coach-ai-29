@@ -1,4 +1,5 @@
 
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -69,12 +70,12 @@ serve(async (req) => {
             console.log("Session created, sending configuration...");
             sessionCreated = true;
             
-            // Send session configuration
+            // Send session configuration optimized for voice roleplay
             const sessionConfig = {
               type: "session.update",
               session: {
                 modalities: ["text", "audio"],
-                instructions: "You are EchoCoach, an AI voice coaching assistant. Help users practice conversations, provide feedback on communication skills, and coach them through difficult scenarios. Be supportive, constructive, and professional. Keep responses concise but helpful.",
+                instructions: "You are an AI roleplay partner for professional communication training. You will receive specific roleplay scenarios and should embody the characters described. Maintain character throughout the conversation while providing natural, realistic responses. When the roleplay concludes, you may briefly step out of character to provide constructive feedback if appropriate.",
                 voice: "alloy",
                 input_audio_format: "pcm16",
                 output_audio_format: "pcm16",
@@ -85,7 +86,7 @@ serve(async (req) => {
                   type: "server_vad",
                   threshold: 0.5,
                   prefix_padding_ms: 300,
-                  silence_duration_ms: 1000
+                  silence_duration_ms: 800
                 },
                 temperature: 0.8,
                 max_response_output_tokens: 4096
@@ -143,8 +144,6 @@ serve(async (req) => {
     try {
       console.log("Forwarding message from client to OpenAI");
       
-      // CRITICAL FIX: Do NOT add authorization to messages
-      // OpenAI authentication is handled at WebSocket connection level only
       const message = event.data;
       
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
@@ -181,3 +180,4 @@ serve(async (req) => {
 
   return response;
 });
+

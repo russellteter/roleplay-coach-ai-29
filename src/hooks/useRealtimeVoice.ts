@@ -1,6 +1,6 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
+import { Scenario } from '@/utils/scenarioPrompts';
 
 interface RealtimeMessage {
   type: string;
@@ -15,6 +15,7 @@ export const useRealtimeVoice = () => {
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
+  const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -32,12 +33,13 @@ export const useRealtimeVoice = () => {
     return bytes;
   };
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (scenario?: Scenario) => {
     try {
       setIsConnecting(true);
       setIsConnected(false);
       setAiResponse('');
       setTranscript('');
+      setCurrentScenario(scenario || null);
       
       console.log("Initializing audio context and queue...");
       // Initialize audio context and queue
@@ -78,6 +80,14 @@ export const useRealtimeVoice = () => {
               console.log('OpenAI connection established');
               setIsConnected(true);
               setIsConnecting(false);
+              
+              // If we have a scenario, send the opening message
+              if (scenario) {
+                console.log('Starting scenario:', scenario.title);
+                setTimeout(() => {
+                  sendScenarioOpening(scenario);
+                }, 1000);
+              }
               break;
 
             case 'session.created':
@@ -190,6 +200,49 @@ export const useRealtimeVoice = () => {
     }
   }, []);
 
+  const sendScenarioOpening = useCallback((scenario: Scenario) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("Cannot send scenario opening - WebSocket not connected");
+      return;
+    }
+
+    console.log("Sending scenario opening for:", scenario.title);
+    
+    // Send the scenario prompt as a system message first
+    const systemEvent = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'system',
+        content: [
+          {
+            type: 'input_text',
+            text: scenario.prompt
+          }
+        ]
+      }
+    };
+
+    // Send the opening message as an assistant message
+    const openingEvent = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'assistant',
+        content: [
+          {
+            type: 'input_text',
+            text: scenario.openingMessage
+          }
+        ]
+      }
+    };
+
+    wsRef.current.send(JSON.stringify(systemEvent));
+    wsRef.current.send(JSON.stringify(openingEvent));
+    wsRef.current.send(JSON.stringify({ type: 'response.create' }));
+  }, []);
+
   const startAudioCapture = useCallback(async () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket not connected');
@@ -275,6 +328,7 @@ export const useRealtimeVoice = () => {
     setIsUserSpeaking(false);
     setTranscript('');
     setAiResponse('');
+    setCurrentScenario(null);
   }, [stopAudioCapture]);
 
   useEffect(() => {
@@ -291,6 +345,7 @@ export const useRealtimeVoice = () => {
     isUserSpeaking,
     transcript,
     aiResponse,
+    currentScenario,
     connect,
     startAudioCapture,
     stopAudioCapture,

@@ -1,3 +1,4 @@
+
 export class AudioRecorder {
   private stream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
@@ -86,6 +87,7 @@ export class AudioQueue {
   }
 
   async addToQueue(audioData: Uint8Array) {
+    console.log('Adding audio to queue, size:', audioData.length);
     this.queue.push(audioData);
     if (!this.isPlaying) {
       await this.playNext();
@@ -102,14 +104,20 @@ export class AudioQueue {
     const audioData = this.queue.shift()!;
 
     try {
-      const wavData = this.createWavFromPCM(audioData);
-      const audioBuffer = await this.audioContext.decodeAudioData(wavData.buffer);
+      console.log('Playing audio chunk, size:', audioData.length);
+      
+      // Convert PCM16 data directly to AudioBuffer
+      const audioBuffer = await this.pcmToAudioBuffer(audioData);
       
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(this.audioContext.destination);
       
-      source.onended = () => this.playNext();
+      source.onended = () => {
+        console.log('Audio chunk finished playing');
+        this.playNext();
+      };
+      
       source.start(0);
     } catch (error) {
       console.error('Error playing audio:', error);
@@ -117,50 +125,23 @@ export class AudioQueue {
     }
   }
 
-  private createWavFromPCM(pcmData: Uint8Array): Uint8Array {
-    // Convert bytes to 16-bit samples
-    const int16Data = new Int16Array(pcmData.length / 2);
+  private async pcmToAudioBuffer(pcmData: Uint8Array): Promise<AudioBuffer> {
+    // Convert bytes to 16-bit samples (little-endian)
+    const samples = new Int16Array(pcmData.length / 2);
     for (let i = 0; i < pcmData.length; i += 2) {
-      int16Data[i / 2] = (pcmData[i + 1] << 8) | pcmData[i];
+      samples[i / 2] = (pcmData[i + 1] << 8) | pcmData[i];
     }
     
-    // Create WAV header
-    const wavHeader = new ArrayBuffer(44);
-    const view = new DataView(wavHeader);
+    // Convert to float32 for AudioBuffer
+    const floatSamples = new Float32Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      floatSamples[i] = samples[i] / 32768.0;
+    }
     
-    const writeString = (view: DataView, offset: number, string: string) => {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-      }
-    };
-
-    // WAV header parameters
-    const sampleRate = 24000;
-    const numChannels = 1;
-    const bitsPerSample = 16;
-    const blockAlign = (numChannels * bitsPerSample) / 8;
-    const byteRate = sampleRate * blockAlign;
-
-    // Write WAV header
-    writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + int16Data.byteLength, true);
-    writeString(view, 8, 'WAVE');
-    writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitsPerSample, true);
-    writeString(view, 36, 'data');
-    view.setUint32(40, int16Data.byteLength, true);
-
-    // Combine header and data
-    const wavArray = new Uint8Array(wavHeader.byteLength + int16Data.byteLength);
-    wavArray.set(new Uint8Array(wavHeader), 0);
-    wavArray.set(new Uint8Array(int16Data.buffer), wavHeader.byteLength);
+    // Create AudioBuffer
+    const audioBuffer = this.audioContext.createBuffer(1, floatSamples.length, 24000);
+    audioBuffer.getChannelData(0).set(floatSamples);
     
-    return wavArray;
+    return audioBuffer;
   }
 }
