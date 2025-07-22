@@ -10,6 +10,15 @@ export interface RealtimeMessage {
   [key: string]: any;
 }
 
+/**
+ * Possible error payloads emitted by the realtime voice edge function.
+ *
+ * - `{ type: 'error', error: 'Invalid JSON from OpenAI' }`
+ * - `{ type: 'error', error: 'OpenAI connection failed' }`
+ * - `{ type: 'error', error: 'Invalid message format' }`
+ * - `{ type: 'error', error: 'Connection setup failed: <reason>' }`
+ */
+
 // Simplified connection state enum
 enum ConnectionState {
   CLOSED = 'CLOSED',
