@@ -27,7 +27,6 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
     transcript,
     aiResponse,
     currentScenario,
-    selectedScenario,
     connectionError,
     connect,
     startAudioCapture,
@@ -97,7 +96,7 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
     updateVolume(newVolume);
   };
 
-  const showScenarioSelection = !selectedScenario && !isConnected && !isConnecting;
+  const showScenarioSelection = !currentScenario && !isConnected && !isConnecting;
 
   return (
     <div className="w-full space-y-6">
@@ -142,14 +141,14 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
       )}
 
       {/* Selected Scenario Instructions */}
-      {selectedScenario && (
+      {currentScenario && (
         <Card className="p-4 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
           <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2 flex items-center">
             <Users className="w-4 h-4 mr-2" />
-            Your Role: {selectedScenario.title}
+            Your Role: {currentScenario.title}
           </h4>
           <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
-            {selectedScenario.description}
+            {currentScenario.description}
           </p>
           <div className="text-xs text-blue-700 dark:text-blue-300 font-medium">
             💡 {isConnected 
@@ -161,7 +160,7 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
       )}
 
       {/* Connection Status */}
-      {(selectedScenario || isConnected || isConnecting || connectionError) && (
+      {(currentScenario || isConnected || isConnecting || connectionError) && (
         <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-sm">
           <div className="flex items-center space-x-3">
             <div className={`w-3 h-3 rounded-full ${
@@ -177,9 +176,9 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
                  connectionError ? 'Connection Error' :
                  'Disconnected'}
               </span>
-              {selectedScenario && (
+              {currentScenario && (
                 <span className="text-sm text-muted-foreground">
-                  {selectedScenario.title}
+                  {currentScenario.title}
                 </span>
               )}
             </div>
