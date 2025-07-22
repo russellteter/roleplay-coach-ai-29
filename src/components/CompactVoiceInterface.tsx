@@ -121,10 +121,10 @@ const CompactVoiceInterface = () => {
                 key={scenario.id}
                 onClick={() => handleConnectWithScenario(scenario)}
                 variant="outline"
-                className="h-auto p-4 text-left flex-col items-start border-primary-foreground/20 hover:border-primary-foreground/40 hover:bg-primary-foreground/10 text-primary-foreground"
+                className="h-auto p-4 text-left flex-col items-start border-white/30 hover:border-white/50 hover:bg-white/10 text-white bg-white/5"
               >
-                <div className="font-medium mb-1">{scenario.title}</div>
-                <div className="text-sm text-primary-foreground/80">{scenario.description}</div>
+                <div className="font-medium mb-1 text-white">{scenario.title}</div>
+                <div className="text-sm text-white/90">{scenario.description}</div>
               </Button>
             ))}
           </div>
