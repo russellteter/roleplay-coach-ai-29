@@ -13,12 +13,17 @@ export interface RealtimeMessage {
 // Simplified connection state enum
 enum ConnectionState {
   CLOSED = 'CLOSED',
-  OPENING = 'OPENING', 
+  OPENING = 'OPENING',
   CONFIGURED = 'CONFIGURED',
   STARTED = 'STARTED'
 }
 
-export const useRealtimeVoice = () => {
+export interface UseRealtimeVoiceOptions {
+  onReconnectAttempt?: (attempt: number, delay: number) => void;
+  onReconnectFailed?: (attempt: number, error: string) => void;
+}
+
+export const useRealtimeVoice = (options?: UseRealtimeVoiceOptions) => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.CLOSED);
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
@@ -39,8 +44,12 @@ export const useRealtimeVoice = () => {
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const retryCountRef = useRef(0);
-  const maxRetries = 3;
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldReconnectRef = useRef(false);
+  const maxRetries = 5;
   const scenarioRef = useRef<Scenario | null>(null);
+  const [retryAttempts, setRetryAttempts] = useState(0);
+  const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -197,11 +206,38 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
   }, [sendAndAwaitAck]);
 
+  const scheduleReconnect = useCallback(
+    (reason?: string) => {
+      if (!shouldReconnectRef.current) return;
+      if (reconnectTimeoutRef.current) return;
+      const attempt = retryCountRef.current + 1;
+      if (attempt > maxRetries) {
+        options?.onReconnectFailed?.(retryCountRef.current, 'max retries reached');
+        return;
+      }
+      const delay = Math.min(1000 * 2 ** retryCountRef.current, 30000);
+      retryCountRef.current = attempt;
+      setRetryAttempts(attempt);
+      setLastFailureTime(Date.now());
+      options?.onReconnectAttempt?.(attempt, delay);
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null;
+        retryConnection();
+      }, delay);
+    },
+    [retryConnection, options]
+  );
+
   const connect = useCallback(async (scenario?: Scenario): Promise<void> => {
     try {
       audioDebugger.log("🚀 Starting connection process...");
       setConnectionState(ConnectionState.OPENING);
       setConnectionError(null);
+      shouldReconnectRef.current = true;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       setAiResponse('');
       setTranscript('');
       
@@ -252,6 +288,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         retryCountRef.current = 0; // Reset retry count on successful connection
+        setRetryAttempts(0);
+        setLastFailureTime(null);
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
       };
 
       wsRef.current.onmessage = async (event) => {
@@ -379,6 +421,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         setConnectionState(ConnectionState.CLOSED);
+        scheduleReconnect('error');
       };
 
       wsRef.current.onclose = (event) => {
@@ -410,6 +453,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         } else {
           setConnectionError(`Connection closed (${event.code}). Please try again.`);
         }
+        scheduleReconnect('close');
       };
 
     } catch (error) {
@@ -505,6 +549,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     try {
       audioDebugger.log("🔌 Disconnecting...");
       stopAudioCapture();
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
       
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
@@ -540,6 +589,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       
       gainNodeRef.current = null;
       retryCountRef.current = 0;
+      setRetryAttempts(0);
       scenarioRef.current = null;
       
       // Only update state if component is still mounted
@@ -593,6 +643,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     sendTextMessage,
     setVolume,
     disconnect,
-    retryConnection
+    retryConnection,
+    retryAttempts,
+    lastFailureTime
   };
 };
