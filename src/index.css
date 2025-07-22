@@ -8,35 +8,58 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* EchoCoach Brand Colors - Deep Navy & Teal */
+    --background: 248 249 250; /* Soft white #F8F9FA */
+    --foreground: 215 28% 17%; /* Deep navy text */
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 215 28% 17%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 28% 17%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Deep Navy */
+    --primary: 225 39% 21%; /* #1B1F3B */
+    --primary-foreground: 248 249 250;
+    --primary-glow: 225 39% 31%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Soft Gray */
+    --secondary: 220 13% 91%; /* #E5E7EB */
+    --secondary-foreground: 215 28% 17%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted tones */
+    --muted: 220 13% 91%;
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Teal */
+    --accent: 188 95% 38%; /* #00B7C2 */
+    --accent-foreground: 0 0% 100%;
+    --accent-glow: 188 95% 48%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 188 95% 38%;
 
-    --radius: 0.5rem;
+    /* Design system variables */
+    --radius: 0.75rem;
+    
+    /* Custom gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
+    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-glow)));
+    --gradient-hero: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
+    
+    /* Shadows */
+    --shadow-elegant: 0 10px 30px -10px hsl(var(--primary) / 0.3);
+    --shadow-glow: 0 0 40px hsl(var(--accent-glow) / 0.4);
+    --shadow-card: 0 4px 20px -4px hsl(var(--primary) / 0.1);
+    
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     --sidebar-background: 0 0% 98%;
 
@@ -100,6 +123,113 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer components {
+  /* Hero gradient background */
+  .hero-gradient {
+    background: var(--gradient-hero);
+  }
+  
+  /* Card with elegant shadow */
+  .card-elegant {
+    box-shadow: var(--shadow-card);
+    transition: var(--transition-smooth);
+  }
+  
+  .card-elegant:hover {
+    box-shadow: var(--shadow-elegant);
+    transform: translateY(-2px);
+  }
+  
+  /* Glow effect for CTAs */
+  .glow-accent {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  /* Animated underline for links */
+  .link-animated {
+    @apply relative inline-block;
+  }
+  
+  .link-animated::after {
+    content: '';
+    @apply absolute w-full scale-x-0 h-0.5 bottom-0 left-0 bg-accent origin-bottom-right;
+    transition: var(--transition-smooth);
+  }
+  
+  .link-animated:hover::after {
+    @apply scale-x-100 origin-bottom-left;
+  }
+  
+  /* Smooth scale animation */
+  .hover-scale {
+    transition: var(--transition-smooth);
+  }
+  
+  .hover-scale:hover {
+    transform: scale(1.05);
+  }
+  
+  /* Pulse animation for voice indicators */
+  .pulse-voice {
+    animation: pulse-voice 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse-voice {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.1);
+    }
+  }
+  
+  /* Fade in animation */
+  .fade-in {
+    animation: fade-in 0.6s ease-out forwards;
+  }
+  
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* Waveform animation */
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  
+  .waveform-bar {
+    width: 3px;
+    background: var(--gradient-accent);
+    border-radius: 2px;
+    animation: waveform 1.5s ease-in-out infinite;
+  }
+  
+  .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
+  .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
+  .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
+  .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+  
+  @keyframes waveform {
+    0%, 100% {
+      height: 4px;
+    }
+    50% {
+      height: 20px;
+    }
   }
 }
