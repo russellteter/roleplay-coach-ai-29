@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface RealtimeMessage {
   type: string;
@@ -74,13 +75,17 @@ export const useRealtimeVoice = () => {
   const testEdgeFunctionHealth = async (): Promise<boolean> => {
     try {
       audioDebugger.log("🏥 Testing edge function health...");
-      const response = await fetch(
-        `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice/health`,
-        { method: 'GET' }
-      );
+      const { data, error } = await supabase.functions.invoke('realtime-voice', {
+        body: { action: 'health' }
+      });
       
-      if (response.ok) {
-        const data = await response.json();
+      if (error) {
+        audioDebugger.error("❌ Edge function health check failed", error);
+        setConnectionError(`Edge function error: ${error.message}`);
+        return false;
+      }
+      
+      if (data) {
         audioDebugger.log("✅ Edge function health check passed", data);
         
         if (!data.hasOpenAIKey) {
@@ -89,11 +94,9 @@ export const useRealtimeVoice = () => {
         }
         
         return true;
-      } else {
-        audioDebugger.error("❌ Edge function health check failed", response.status, response.statusText);
-        setConnectionError(`Edge function not responding (${response.status})`);
-        return false;
       }
+      
+      return false;
     } catch (error) {
       audioDebugger.error("❌ Edge function health check error", error);
       setConnectionError('Cannot reach edge function. Please check your connection.');
