@@ -387,7 +387,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       await initializeAudioContext();
 
       // Enhanced WebSocket connection
-      const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
+      const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/functions/v1/realtime-voice`;
       logEvent('▷', 'WEBSOCKET_CONNECTING', `Connecting to: ${wsUrl}`);
       
       wsRef.current = new WebSocket(wsUrl);
