@@ -281,7 +281,15 @@ export const useRealtimeVoice = () => {
         dispatch({ type: 'ERROR', error: 'Edge function health check failed' });
         return;
       }
-      
+
+      if (!import.meta.env.SUPABASE_PUBLISHABLE_KEY) {
+        const msg = 'Supabase publishable key is missing in environment configuration.';
+        setConnectionError(msg);
+        toast({ title: 'Configuration Error', description: msg });
+        dispatch({ type: 'ERROR', error: msg });
+        return;
+      }
+
       // Initialize audio system
       await initializeAudioContext();
 
