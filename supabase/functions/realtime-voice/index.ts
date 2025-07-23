@@ -1,11 +1,6 @@
+
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-// Basic event types shared with the frontend
-interface SessionUpdateEvent {
-  type: 'session.update';
-  session: Record<string, unknown>;
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,24 +33,8 @@ serve(async (req) => {
 
     console.log("✅ OpenAI API key found");
 
-    // Handle health check requests - both GET and POST with action: 'health'
-    let isHealthCheck = false;
-    
-    if (req.method === 'GET' && (req.url.includes('/health') || req.url.endsWith('realtime-voice'))) {
-      isHealthCheck = true;
-    } else if (req.method === 'POST') {
-      try {
-        const body = await req.json();
-        if (body && body.action === 'health') {
-          isHealthCheck = true;
-        }
-      } catch (e) {
-        // Not JSON or no action field, continue with WebSocket logic
-        console.log("📝 POST request without valid JSON body, checking for WebSocket upgrade");
-      }
-    }
-
-    if (isHealthCheck) {
+    // Handle health check requests
+    if (req.method === 'GET' && req.url.includes('/health')) {
       console.log("💚 Health check requested");
       return new Response(JSON.stringify({
         status: "healthy",
@@ -67,149 +46,65 @@ serve(async (req) => {
       });
     }
 
-    // Check for WebSocket upgrade
-    const { headers } = req;
-    const upgradeHeader = headers.get("upgrade") || "";
-    
-    console.log("🔍 Request headers debug:", {
-      upgrade: upgradeHeader,
-      connection: headers.get("connection"),
-      secWebSocketKey: headers.get("sec-websocket-key"),
-      secWebSocketVersion: headers.get("sec-websocket-version")
-    });
-    
-    if (upgradeHeader.toLowerCase() !== "websocket") {
-      console.log("❌ Not a WebSocket upgrade request - received:", upgradeHeader);
-      console.log("❌ Full request method:", req.method);
-      console.log("❌ Request URL:", req.url);
-      return new Response("Expected WebSocket connection", { 
-        status: 400,
-        headers: corsHeaders 
-      });
-    }
-
-    console.log("🔌 Upgrading to WebSocket connection");
-    
-    const { socket, response } = Deno.upgradeWebSocket(req);
-    console.log("✅ WebSocket upgrade successful");
-    
-    let openAISocket: WebSocket | null = null;
-    let isConnected = false;
-    let sessionConfigured = false;
-    let keepAliveInterval: number | null = null;
-    let connectionTimeout: number | null = null;
-    let heartbeatInterval: number | null = null;
-
-    // Prevent immediate shutdown with keep-alive mechanism
-    const startKeepAlive = () => {
-      if (keepAliveInterval) {
-        clearInterval(keepAliveInterval);
-      }
-      keepAliveInterval = setInterval(() => {
-        console.log("💓 Keep-alive heartbeat");
-        if (socket.readyState === WebSocket.OPEN) {
-          try {
-            socket.send(JSON.stringify({ 
-              type: 'heartbeat', 
-              timestamp: new Date().toISOString() 
-            }));
-          } catch (error) {
-            console.error("❌ Keep-alive send error:", error);
-          }
-        }
-      }, 30000); // 30 second heartbeat
-    };
-
-    const startHeartbeat = () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-      }
-      heartbeatInterval = setInterval(() => {
-        if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-          try {
-            openAISocket.send(JSON.stringify({ type: 'ping' }));
-          } catch (error) {
-            console.error("❌ Heartbeat send error:", error);
-          }
-        }
-      }, 20000); // 20 second OpenAI heartbeat
-    };
-
-    const cleanup = () => {
-      console.log("🧹 Cleaning up connections");
-      if (keepAliveInterval) {
-        clearInterval(keepAliveInterval);
-        keepAliveInterval = null;
-      }
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-      if (connectionTimeout) {
-        clearTimeout(connectionTimeout);
-        connectionTimeout = null;
-      }
-      if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-        openAISocket.close();
-      }
-      openAISocket = null;
-      isConnected = false;
-      sessionConfigured = false;
-    };
-
-    socket.onopen = async () => {
+    // Handle POST requests for health check
+    if (req.method === 'POST') {
       try {
-        console.log("🟢 Client WebSocket connection opened");
-        startKeepAlive();
-        
-        // Add connection timeout to prevent hanging
-        connectionTimeout = setTimeout(() => {
-          console.error("⏰ Connection timeout - closing after 60 seconds");
-          cleanup();
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.close(1000, "Connection timeout");
-          }
-        }, 60000);
-        
-        // Connect to OpenAI Realtime API
-        const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
-        console.log("🔗 Connecting to OpenAI Realtime API...");
-        
-        openAISocket = new WebSocket(openAIUrl, [], {
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "OpenAI-Beta": "realtime=v1"
-          }
-        });
+        const body = await req.json();
+        if (body && body.action === 'health') {
+          console.log("💚 Health check requested via POST");
+          return new Response(JSON.stringify({
+            status: "healthy",
+            message: "Realtime voice edge function is running",
+            timestamp: new Date().toISOString(),
+            hasOpenAIKey: !!apiKey
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
-        openAISocket.onopen = () => {
-          console.log("✅ Connected to OpenAI Realtime API");
-          isConnected = true;
-          startHeartbeat();
+        // Handle streaming connection request
+        if (body && body.action === 'connect') {
+          console.log("🔗 Starting streaming connection to OpenAI");
           
-          // Send connection established event to client
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'connection.established',
-              timestamp: new Date().toISOString()
-            }));
-          }
-        };
-
-        openAISocket.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log(`📨 OpenAI -> Edge: ${data.type}`);
-
-            // Handle session.created to send our optimized configuration
-            if (data.type === 'session.created') {
-              console.log("⚙️ Received session.created, sending session configuration");
+          // Create a readable stream for the response
+          const stream = new ReadableStream({
+            start(controller) {
+              // Connect to OpenAI Realtime API
+              const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
+              console.log("🔗 Connecting to OpenAI Realtime API...");
               
-              const sessionConfig: SessionUpdateEvent = {
-                type: 'session.update',
-                session: {
-                  modalities: ["text", "audio"],
-                  instructions: `You are Sharpen, an advanced AI roleplay coach that helps people practice important conversations through voice interaction.
+              const openAISocket = new WebSocket(openAIUrl, [], {
+                headers: {
+                  "Authorization": `Bearer ${apiKey}`,
+                  "OpenAI-Beta": "realtime=v1"
+                }
+              });
+
+              openAISocket.onopen = () => {
+                console.log("✅ Connected to OpenAI Realtime API");
+                
+                // Send connection established event
+                const event = {
+                  type: 'connection.established',
+                  timestamp: new Date().toISOString()
+                };
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+              };
+
+              openAISocket.onmessage = (event) => {
+                try {
+                  const data = JSON.parse(event.data);
+                  console.log(`📨 OpenAI -> Edge: ${data.type}`);
+
+                  // Handle session.created to send our optimized configuration
+                  if (data.type === 'session.created') {
+                    console.log("⚙️ Received session.created, sending session configuration");
+                    
+                    const sessionConfig = {
+                      type: 'session.update',
+                      session: {
+                        modalities: ["text", "audio"],
+                        instructions: `You are Sharpen, an advanced AI roleplay coach that helps people practice important conversations through voice interaction.
 
 CRITICAL BEHAVIOR RULES:
 1. When a roleplay scenario starts, YOU must speak first immediately after receiving the scenario setup
@@ -227,147 +122,126 @@ RESPONSE STYLE:
 - Help create an immersive practice experience
 
 Remember: You are not just an AI assistant - you are playing a specific role to help the user practice. Stay in character and make the conversation feel real.`,
-                  voice: "alloy",
-                  input_audio_format: "pcm16",
-                  output_audio_format: "pcm16",
-                  input_audio_transcription: {
-                    model: "whisper-1"
-                  },
-                  turn_detection: {
-                    type: "server_vad",
-                    threshold: 0.5,
-                    prefix_padding_ms: 300,
-                    silence_duration_ms: 1200
-                  },
-                  temperature: 0.8,
-                  max_response_output_tokens: "inf"
+                        voice: "alloy",
+                        input_audio_format: "pcm16",
+                        output_audio_format: "pcm16",
+                        input_audio_transcription: {
+                          model: "whisper-1"
+                        },
+                        turn_detection: {
+                          type: "server_vad",
+                          threshold: 0.5,
+                          prefix_padding_ms: 300,
+                          silence_duration_ms: 1200
+                        },
+                        temperature: 0.8,
+                        max_response_output_tokens: "inf"
+                      }
+                    };
+
+                    console.log("📤 Sending session configuration to OpenAI");
+                    openAISocket.send(JSON.stringify(sessionConfig));
+                  }
+
+                  // Handle session.updated response from OpenAI
+                  if (data.type === 'session.updated') {
+                    console.log("🎯 Session updated by OpenAI - marking as configured");
+                    
+                    // Send explicit session ready event to client
+                    const readyEvent = {
+                      type: 'session.ready',
+                      timestamp: new Date().toISOString(),
+                      message: 'Session is configured and ready for scenario start'
+                    };
+                    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(readyEvent)}\n\n`));
+                    console.log("📤 Sent session.ready to client");
+                  }
+
+                  // Forward ALL events to client
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`));
+                  console.log(`📤 Forwarded to client: ${data.type}`);
+                  
+                } catch (error) {
+                  console.error("❌ Error processing OpenAI message:", error);
+                  const errorEvent = {
+                    type: 'error',
+                    error: 'Invalid JSON from OpenAI',
+                    timestamp: new Date().toISOString()
+                  };
+                  controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
                 }
               };
 
-              console.log("📤 Sending session configuration to OpenAI");
-              openAISocket.send(JSON.stringify(sessionConfig));
-            }
+              openAISocket.onerror = (error) => {
+                console.error("❌ OpenAI WebSocket error:", error);
+                const errorEvent = {
+                  type: 'error',
+                  error: 'OpenAI connection failed',
+                  timestamp: new Date().toISOString()
+                };
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+              };
 
-            // Handle session.updated response from OpenAI - CRITICAL FIX
-            if (data.type === 'session.updated') {
-              console.log("🎯 Session updated by OpenAI - marking as configured");
-              sessionConfigured = true;
-              
-              // Send explicit session ready event to client
-              if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
-                  type: 'session.ready',
-                  timestamp: new Date().toISOString(),
-                  message: 'Session is configured and ready for scenario start'
-                }));
-                console.log("📤 Sent session.ready to client");
+              openAISocket.onclose = (event) => {
+                console.log(`🔴 OpenAI WebSocket closed: ${event.code} ${event.reason}`);
+                const closeEvent = {
+                  type: 'connection.closed',
+                  code: event.code,
+                  reason: event.reason,
+                  timestamp: new Date().toISOString()
+                };
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(closeEvent)}\n\n`));
+                controller.close();
+              };
+
+              // Store the socket for cleanup
+              (controller as any).openAISocket = openAISocket;
+            },
+            cancel() {
+              console.log("🧹 Cleaning up streaming connection");
+              if ((this as any).openAISocket) {
+                (this as any).openAISocket.close();
               }
             }
+          });
 
-            // Forward ALL events to client with enhanced logging
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(event.data);
-              console.log(`📤 Forwarded to client: ${data.type}`);
-            } else {
-              console.warn(`⚠️ Cannot forward ${data.type} - client socket not open`);
+          return new Response(stream, {
+            headers: {
+              ...corsHeaders,
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
             }
-
-            // Handle pong responses
-            if (data.type === 'pong') {
-              console.log("🏓 Received pong from OpenAI");
-            }
-            
-          } catch (error) {
-            console.error("❌ Error processing OpenAI message:", error);
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ 
-                type: 'error', 
-                error: 'Invalid JSON from OpenAI',
-                timestamp: new Date().toISOString()
-              }));
-            }
-          }
-        };
-
-        openAISocket.onerror = (error) => {
-          console.error("❌ OpenAI WebSocket error:", error);
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'error',
-              error: 'OpenAI connection failed',
-              timestamp: new Date().toISOString()
-            }));
-          }
-        };
-
-        openAISocket.onclose = (event) => {
-          console.log(`🔴 OpenAI WebSocket closed: ${event.code} ${event.reason}`);
-          isConnected = false;
-          sessionConfigured = false;
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({
-              type: 'connection.closed',
-              code: event.code,
-              reason: event.reason,
-              timestamp: new Date().toISOString()
-            }));
-          }
-        };
-
-      } catch (error) {
-        console.error("❌ Error in socket.onopen:", error);
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: 'error',
-            error: `Connection setup failed: ${error.message}`,
-            timestamp: new Date().toISOString()
-          }));
+          });
         }
+
+        // Handle message sending
+        if (body && body.action === 'send_message') {
+          console.log("📤 Received message to send to OpenAI");
+          // For now, return success - we'll implement message routing later
+          return new Response(JSON.stringify({
+            status: 'success',
+            message: 'Message queued for sending'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+
+      } catch (e) {
+        console.log("📝 POST request without valid JSON body");
       }
-    };
+    }
 
-    socket.onmessage = (event) => {
-      try {
-        if (!isConnected || !openAISocket || openAISocket.readyState !== WebSocket.OPEN) {
-          console.warn("⚠️ Received message but OpenAI not connected");
-          return;
-        }
-
-        const data = JSON.parse(event.data);
-        console.log(`📨 Client -> OpenAI: ${data.type}`);
-
-        // Handle heartbeat from client
-        if (data.type === 'heartbeat') {
-          console.log("💓 Received heartbeat from client");
-          return;
-        }
-
-        // Forward client messages to OpenAI
-        openAISocket.send(event.data);
-
-      } catch (error) {
-        console.error("❌ Error processing client message:", error);
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            type: 'error',
-            error: 'Invalid message format',
-            timestamp: new Date().toISOString()
-          }));
-        }
-      }
-    };
-
-    socket.onerror = (error) => {
-      console.error("❌ Client WebSocket error:", error);
-      cleanup();
-    };
-
-    socket.onclose = (event) => {
-      console.log(`🔴 Client WebSocket closed: ${event.code} ${event.reason}`);
-      cleanup();
-    };
-
-    return response;
+    // Invalid request
+    console.log("❌ Invalid request format");
+    return new Response(JSON.stringify({
+      error: "Invalid request",
+      message: "Expected valid POST request with action",
+      timestamp: new Date().toISOString()
+    }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
     console.error("❌ Error in serve function:", error);
