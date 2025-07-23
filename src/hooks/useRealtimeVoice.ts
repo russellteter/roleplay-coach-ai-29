@@ -519,25 +519,25 @@ export const useRealtimeVoice = () => {
     }
   }, [logEvent]);
 
-const stopAudioCapture = useCallback(() => {
-  if (recorderRef.current) {
-    try {
-      logEvent('▷', 'AUDIO_CAPTURE_STOP', 'Stopping audio capture');
-      recorderRef.current.stop();
-    } catch (error) {
-      logEvent('▷', 'AUDIO_CAPTURE_STOP_ERROR', error);
-    } finally {
-      recorderRef.current = null;
-      setIsRecording(false);
+  const stopAudioCapture = useCallback(() => {
+    if (recorderRef.current) {
+      try {
+        logEvent('▷', 'AUDIO_CAPTURE_STOP', 'Stopping audio capture');
+        recorderRef.current.stop();
+      } catch (error) {
+        logEvent('▷', 'AUDIO_CAPTURE_STOP_ERROR', error);
+      } finally {
+        recorderRef.current = null;
+        setIsRecording(false);
+      }
     }
-  }
-}, [logEvent]);
+  }, [logEvent]);
 
-const sendTextMessage = useCallback((text: string) => {
-  // Text messages will be sent through the HTTP streaming endpoint
-  logEvent('▷', 'TEXT_MESSAGE_SEND', `Sending text message: ${text}`);
-  // TODO: Implement text message sending through HTTP streaming
-}, [logEvent]);
+  const sendTextMessage = useCallback((text: string) => {
+    // Text messages will be sent through the HTTP streaming endpoint
+    logEvent('▷', 'TEXT_MESSAGE_SEND', `Sending text message: ${text}`);
+    // TODO: Implement text message sending through HTTP streaming
+  }, [logEvent]);
 
   const setVolume = useCallback((volume: number) => {
     if (gainNodeRef.current) {
