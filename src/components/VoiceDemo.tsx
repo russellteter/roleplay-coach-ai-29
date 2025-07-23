@@ -188,7 +188,14 @@ const VoiceDemo = () => {
         {/* Header Section - Vocalize.ai Branding */}
         <div className="text-center space-y-6">
           <div className="space-y-2">
-            <h1 className="text-6xl font-bold text-foreground font-inter tracking-tight">
+            {/* Sharpen Logo */}
+            <div className="flex items-center justify-center space-x-3 mb-4">
+              <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-glow">
+                <Mic className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <span className="text-2xl font-bold text-primary font-inter">SHARPEN</span>
+            </div>
+            <h1 className="text-4xl font-bold text-foreground font-inter tracking-tight">
               AI Voice Coaching Platform
             </h1>
             <p className="text-xl text-foreground/90 font-medium">
