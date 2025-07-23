@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw, AlertTriangle, Users } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw, AlertTriangle, Users, CheckCircle, Loader2, Zap } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
@@ -40,6 +40,7 @@ const VoiceDemo = () => {
   const [selectedUseCase, setSelectedUseCase] = useState<UseCase>('customer-support');
   const [audioPermissionGranted, setAudioPermissionGranted] = useState(false);
   const [volume, setVolume] = useState(0.8);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
   
   const {
     isConnected,
@@ -51,8 +52,12 @@ const VoiceDemo = () => {
     aiResponse,
     currentScenario,
     connectionError,
+    connectionStable,
+    hasError,
     isReadyToStart,
     isScenarioStarted,
+    connectionQuality,
+    retryCount,
     connect,
     startScenario,
     startAudioCapture,
@@ -64,33 +69,43 @@ const VoiceDemo = () => {
 
   const { scenarios, loading: scenariosLoading, error: scenariosError } = useScenarioPrompts();
 
-  // Show success toast when connection is ready for roleplay
+  // Enhanced connection state management
   useEffect(() => {
     if (isReadyToStart && !isScenarioStarted && currentScenario) {
       toast({
-        title: "Voice Session Ready",
-        description: "Click 'Begin Roleplay' to start the conversation with AI.",
+        title: "🎯 Voice Session Ready",
+        description: "Connection stable. Click 'Begin Roleplay' to start the conversation.",
       });
     }
   }, [isReadyToStart, isScenarioStarted, currentScenario, toast]);
 
+  // Show connection quality feedback
+  useEffect(() => {
+    if (connectionQuality === 'poor' && isConnecting) {
+      toast({
+        title: "⚠️ Connection Quality",
+        description: "Detecting connection issues. Retrying...",
+        variant: "destructive",
+      });
+    }
+  }, [connectionQuality, isConnecting, toast]);
+
   // Filter scenarios by selected use case
   const filteredScenarios = scenarios.filter(scenario => 
     scenario.category === selectedUseCase
-  ).slice(0, 4); // Only show 4 scenarios per use case
+  ).slice(0, 4);
 
   const requestAudioPermission = async () => {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       setAudioPermissionGranted(true);
       
-      // Resume audio context if suspended
       if (audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
       }
       
       toast({
-        title: "Audio Ready",
+        title: "🎤 Audio Ready",
         description: "Microphone access granted. You can now start voice conversations.",
       });
     } catch (error) {
@@ -104,6 +119,7 @@ const VoiceDemo = () => {
 
   const handleStartVoiceSession = async (scenario: Scenario) => {
     console.log('🎯 User clicked Start Voice Session for:', scenario.title);
+    setConnectionAttempts(prev => prev + 1);
     
     if (!audioPermissionGranted) {
       await requestAudioPermission();
@@ -112,13 +128,15 @@ const VoiceDemo = () => {
 
     try {
       await connect(scenario);
-      console.log('🎯 Connection initiated, waiting for CONFIGURED state...');
-      // Toast will be shown when connection reaches CONFIGURED state
+      toast({
+        title: "🔗 Connecting to Sharpen",
+        description: "Establishing secure voice connection...",
+      });
     } catch (error) {
       console.error('🎯 Connection failed:', error);
       toast({
         title: "Connection Failed",
-        description: "We couldn't connect. Please refresh and try again, or check your audio settings.",
+        description: "We couldn't connect. Please refresh and try again.",
         variant: "destructive",
       });
     }
@@ -129,7 +147,7 @@ const VoiceDemo = () => {
     try {
       await startScenario();
       toast({
-        title: "Roleplay Started",
+        title: "🎭 Roleplay Started",
         description: "AI is now speaking. The conversation has begun!",
       });
     } catch (error) {
@@ -160,15 +178,12 @@ const VoiceDemo = () => {
 
   const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
-    // Apply volume to audio context if available
-    if (audioContext) {
-      // Volume control will be handled by the audio queue
-    }
   };
 
   const resetDemo = () => {
     disconnect();
     setAudioPermissionGranted(false);
+    setConnectionAttempts(0);
   };
 
   const handleRetry = () => {
@@ -178,14 +193,56 @@ const VoiceDemo = () => {
   };
 
   const handleDismissError = () => {
-    // Clear error by attempting to disconnect and reset state
     disconnect();
   };
+
+  // Enhanced connection status display
+  const getConnectionStatusInfo = () => {
+    if (hasError) {
+      return {
+        text: 'Connection Error',
+        color: 'bg-red-500',
+        icon: AlertTriangle
+      };
+    }
+    
+    if (isScenarioStarted) {
+      return {
+        text: 'Live Roleplay - Speaking with AI',
+        color: 'bg-green-500',
+        icon: Users
+      };
+    }
+    
+    if (isReadyToStart) {
+      return {
+        text: 'Ready to Begin Roleplay',
+        color: 'bg-blue-500',
+        icon: CheckCircle
+      };
+    }
+    
+    if (isConnecting) {
+      return {
+        text: connectionStable ? 'Finalizing Connection...' : 'Connecting to Sharpen...',
+        color: 'bg-yellow-500 animate-pulse',
+        icon: Loader2
+      };
+    }
+    
+    return {
+      text: 'Disconnected',
+      color: 'bg-gray-400',
+      icon: AlertTriangle
+    };
+  };
+
+  const statusInfo = getConnectionStatusInfo();
 
   return (
     <div className="min-h-screen bg-gradient-primary">
       <div className="w-full space-y-12 py-16 px-4">
-        {/* Header Section - Vocalize.ai Branding */}
+        {/* Header Section - Sharpen Branding */}
         <div className="text-center space-y-6">
           <div className="space-y-2">
             {/* Sharpen Logo */}
@@ -203,7 +260,6 @@ const VoiceDemo = () => {
             </p>
           </div>
 
-          
           {/* Central Icon Set */}
           <div className="flex items-center justify-center space-x-8 py-8">
             <div className="w-16 h-16 bg-background-secondary rounded-2xl flex items-center justify-center shadow-glow">
@@ -265,7 +321,7 @@ const VoiceDemo = () => {
           </Card>
         )}
 
-        {/* Scenario Selection */}
+        {/* Scenario Selection - Only show when no current scenario */}
         {!currentScenario && (
           <div className="space-y-8">
             <h3 className="text-2xl font-bold text-center text-foreground font-inter">Choose Your Practice Scenario</h3>
@@ -297,11 +353,14 @@ const VoiceDemo = () => {
                       >
                         {isConnecting ? (
                           <div className="flex items-center gap-2">
-                            <div className="animate-spin w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full"></div>
-                            Connecting...
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Connecting to Sharpen...
                           </div>
                         ) : (
-                          'Start Voice Session'
+                          <div className="flex items-center gap-2">
+                            <Zap className="w-4 h-4" />
+                            Start Voice Session
+                          </div>
                         )}
                       </Button>
                     </div>
@@ -317,11 +376,10 @@ const VoiceDemo = () => {
           </div>
         )}
 
-        {/* Active Voice Demo */}
-        {(isConnected || isConnecting || currentScenario) && (
+        {/* Active Voice Demo - Show when we have a current scenario */}
+        {currentScenario && (
           <Card className="p-10 max-w-5xl mx-auto rounded-2xl shadow-glow bg-background-secondary/30 backdrop-blur-sm border border-border/20">
-          {/* Scenario Info */}
-          {currentScenario && (
+            {/* Scenario Info */}
             <div className="text-center mb-6 pb-6 border-b">
               <h3 className="text-xl font-semibold text-foreground mb-2">
                 {currentScenario.title}
@@ -331,200 +389,202 @@ const VoiceDemo = () => {
                   'Voice session is ready. Click "Begin Roleplay" to start the conversation.' :
                   isScenarioStarted ? 
                   'You\'re now live with Sharpen. Speak naturally. Sharpen will talk back just like a real person.' :
-                  'Setting up voice session...'
+                  isConnecting ?
+                  'Setting up voice session...' :
+                  'Initializing connection...'
                 }
               </p>
             </div>
-          )}
 
-          {/* Enhanced Error Display */}
-          {connectionError && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className="flex items-center justify-between">
-                <span>⚠️ Voice error: {connectionError}</span>
-                <div className="flex space-x-2">
-                  <Button onClick={handleRetry} size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
-                    <RefreshCw className="w-4 h-4 mr-1" />
-                    Retry
-                  </Button>
-                  <Button onClick={handleDismissError} size="sm" variant="outline">
-                    Choose Different Scenario
-                  </Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
+            {/* Enhanced Error Display */}
+            {connectionError && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between">
+                  <span>⚠️ Voice error: {connectionError}</span>
+                  <div className="flex space-x-2">
+                    <Button onClick={handleRetry} size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Retry ({retryCount}/{5})
+                    </Button>
+                    <Button onClick={handleDismissError} size="sm" variant="outline">
+                      Choose Different Scenario
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
 
-          {/* Connection Status */}
-          <div className="text-center mb-6">
-            <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
-              isConnected && isScenarioStarted ? 'bg-green-100 text-green-800' :
-              isConnected && isReadyToStart ? 'bg-blue-100 text-blue-800' :
-              isConnecting ? 'bg-yellow-100 text-yellow-800' :
-              connectionError ? 'bg-red-100 text-red-800' :
-              'bg-gray-100 text-gray-600'
-            }`}>
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                isConnected && isScenarioStarted ? 'bg-green-500' :
-                isConnected && isReadyToStart ? 'bg-blue-500' :
-                isConnecting ? 'bg-yellow-500 animate-pulse' :
-                connectionError ? 'bg-red-500' :
-                'bg-gray-400'
-              }`}></div>
-              {isConnected && isScenarioStarted ? 'Live Roleplay - Speaking with AI' :
-               isConnected && isReadyToStart ? 'Ready to Begin Roleplay' :
-               isConnecting ? 'Connecting...' :
-               connectionError ? 'Connection Error' :
-               'Disconnected'}
-            </div>
-          </div>
-
-          {/* Begin Roleplay Button - Only show when ready */}
-          {isReadyToStart && !isScenarioStarted && (
+            {/* Enhanced Connection Status */}
             <div className="text-center mb-6">
-              <Button
-                onClick={handleBeginRoleplay}
-                size="lg"
-                className="bg-green-500 hover:bg-green-600 text-white px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all"
-              >
-                <Users className="w-6 h-6 mr-2" />
-                Begin Roleplay
-              </Button>
-              <p className="text-sm text-muted-foreground mt-2">
-                Click to start the AI conversation - the AI will speak first!
-              </p>
+              <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
+                hasError ? 'bg-red-100 text-red-800' :
+                isScenarioStarted ? 'bg-green-100 text-green-800' :
+                isReadyToStart ? 'bg-blue-100 text-blue-800' :
+                isConnecting ? 'bg-yellow-100 text-yellow-800' :
+                'bg-gray-100 text-gray-600'
+              }`}>
+                <div className={`w-2 h-2 rounded-full mr-2 ${statusInfo.color}`}></div>
+                {statusInfo.text}
+                {connectionStable && isConnecting && (
+                  <CheckCircle className="w-4 h-4 ml-2 text-green-500" />
+                )}
+              </div>
+              
+              {/* Connection Quality Indicator */}
+              {connectionQuality !== 'unknown' && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Connection Quality: {connectionQuality === 'good' ? '🟢 Good' : '🟡 Poor'}
+                  {retryCount > 0 && ` (Retry ${retryCount})`}
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Voice Controls */}
-          {isScenarioStarted && (
-            <div className="space-y-6">
-              {/* Microphone Control */}
-              <div className="text-center">
+            {/* Begin Roleplay Button - Enhanced visibility */}
+            {isReadyToStart && !isScenarioStarted && (
+              <div className="text-center mb-6">
                 <Button
-                  onClick={isRecording ? stopAudioCapture : handleStartSpeaking}
+                  onClick={handleBeginRoleplay}
                   size="lg"
-                  className={`w-20 h-20 rounded-full transition-all duration-200 ${
-                    isRecording
-                      ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse shadow-lg scale-110'
-                      : 'bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg hover:scale-105'
-                  }`}
+                  className="bg-green-500 hover:bg-green-600 text-white px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
                 >
-                  {isRecording ? (
-                    <MicOff className="w-8 h-8" />
-                  ) : (
-                    <Mic className="w-8 h-8" />
-                  )}
+                  <Users className="w-6 h-6 mr-2" />
+                  Begin Roleplay
                 </Button>
-                
-                <div className="mt-4 space-y-2">
-                  {isUserSpeaking && (
-                    <div className="flex items-center justify-center text-green-600">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
-                      <span className="text-sm font-medium">You're speaking</span>
-                    </div>
-                  )}
+                <p className="text-sm text-muted-foreground mt-2">
+                  Click to start the AI conversation - the AI will speak first!
+                </p>
+              </div>
+            )}
+
+            {/* Voice Controls - Only show during active scenario */}
+            {isScenarioStarted && (
+              <div className="space-y-6">
+                {/* Microphone Control */}
+                <div className="text-center">
+                  <Button
+                    onClick={isRecording ? stopAudioCapture : handleStartSpeaking}
+                    size="lg"
+                    className={`w-20 h-20 rounded-full transition-all duration-200 ${
+                      isRecording
+                        ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse shadow-lg scale-110'
+                        : 'bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg hover:scale-105'
+                    }`}
+                  >
+                    {isRecording ? (
+                      <MicOff className="w-8 h-8" />
+                    ) : (
+                      <Mic className="w-8 h-8" />
+                    )}
+                  </Button>
                   
-                  {isAISpeaking && (
-                    <div className="flex items-center justify-center text-blue-600">
-                      <Volume2 className="w-4 h-4 mr-2" />
-                      <span className="text-sm font-medium">AI is responding</span>
-                      <div className="ml-2 flex space-x-1">
-                        <div className="w-1 h-3 bg-blue-600 animate-pulse"></div>
-                        <div className="w-1 h-2 bg-blue-600 animate-pulse" style={{animationDelay: '0.1s'}}></div>
-                        <div className="w-1 h-4 bg-blue-600 animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                  <div className="mt-4 space-y-2">
+                    {isUserSpeaking && (
+                      <div className="flex items-center justify-center text-green-600">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                        <span className="text-sm font-medium">You're speaking</span>
                       </div>
+                    )}
+                    
+                    {isAISpeaking && (
+                      <div className="flex items-center justify-center text-blue-600">
+                        <Volume2 className="w-4 h-4 mr-2" />
+                        <span className="text-sm font-medium">AI is responding</span>
+                        <div className="ml-2 flex space-x-1">
+                          <div className="w-1 h-3 bg-blue-600 animate-pulse"></div>
+                          <div className="w-1 h-2 bg-blue-600 animate-pulse" style={{animationDelay: '0.1s'}}></div>
+                          <div className="w-1 h-4 bg-blue-600 animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!isRecording && !isUserSpeaking && !isAISpeaking && (
+                      <p className="text-sm text-muted-foreground">
+                        Click to start speaking
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Volume Control */}
+                <div className="flex items-center justify-center space-x-3">
+                  <VolumeX className="w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="w-24 accent-primary"
+                  />
+                  <Volume2 className="w-4 h-4 text-muted-foreground" />
+                </div>
+
+                {/* Live Transcript */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  <Card className="p-4 rounded-lg border-green-200 bg-green-50">
+                    <h4 className="font-medium mb-3 text-green-800 flex items-center gap-2">
+                      <Mic className="w-4 h-4" />
+                      You said:
+                    </h4>
+                    <div className="min-h-[100px] p-3 bg-white rounded-lg border">
+                      <p className="text-sm text-green-800">
+                        {transcript || "Your speech will appear here..."}
+                      </p>
                     </div>
-                  )}
-                  
-                  {!isRecording && !isUserSpeaking && !isAISpeaking && (
-                    <p className="text-sm text-muted-foreground">
-                      {isRecording ? 'Speak now - AI is listening' : 'Click to start speaking'}
-                    </p>
-                  )}
+                  </Card>
+
+                  <Card className="p-4 rounded-lg border-blue-200 bg-blue-50">
+                    <h4 className="font-medium mb-3 text-blue-800 flex items-center gap-2">
+                      <Volume2 className="w-4 h-4" />
+                      AI responded:
+                    </h4>
+                    <div className="min-h-[100px] p-3 bg-white rounded-lg border">
+                      <p className="text-sm text-blue-800">
+                        {aiResponse || "AI response will appear here..."}
+                      </p>
+                    </div>
+                  </Card>
                 </div>
               </div>
+            )}
 
-              {/* Volume Control */}
-              <div className="flex items-center justify-center space-x-3">
-                <VolumeX className="w-4 h-4 text-muted-foreground" />
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={volume}
-                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                  className="w-24 accent-primary"
-                />
-                <Volume2 className="w-4 h-4 text-muted-foreground" />
+            {/* Action Buttons */}
+            {(isConnected || isConnecting) && (
+              <div className="flex justify-center space-x-3 mt-6 pt-6 border-t">
+                <Button onClick={resetDemo} variant="outline" className="hover:shadow-md transition-all">
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Try Another Scenario
+                </Button>
               </div>
-
-              {/* Live Transcript */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <Card className="p-4 rounded-lg border-green-200 bg-green-50">
-                  <h4 className="font-medium mb-3 text-green-800 flex items-center gap-2">
-                    <Mic className="w-4 h-4" />
-                    You said:
-                  </h4>
-                  <div className="min-h-[100px] p-3 bg-white rounded-lg border">
-                    <p className="text-sm text-green-800">
-                      {transcript || "Your speech will appear here..."}
-                    </p>
-                  </div>
-                </Card>
-
-                <Card className="p-4 rounded-lg border-blue-200 bg-blue-50">
-                  <h4 className="font-medium mb-3 text-blue-800 flex items-center gap-2">
-                    <Volume2 className="w-4 h-4" />
-                    AI responded:
-                  </h4>
-                  <div className="min-h-[100px] p-3 bg-white rounded-lg border">
-                    <p className="text-sm text-blue-800">
-                      {aiResponse || "AI response will appear here..."}
-                    </p>
-                  </div>
-                </Card>
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          {isConnected && (
-            <div className="flex justify-center space-x-3 mt-6 pt-6 border-t">
-              <Button onClick={resetDemo} variant="outline" className="hover:shadow-md transition-all">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Try Another Scenario
-              </Button>
-            </div>
-          )}
-        </Card>
+            )}
+          </Card>
         )}
 
         {/* Enhanced Audio Permission Request */}
-      {!audioPermissionGranted && !isConnected && !currentScenario && (
-        <Card className="p-12 max-w-3xl mx-auto text-center rounded-2xl border-2 border-primary/20 bg-background-secondary/30 backdrop-blur-sm shadow-glow">
-          <div className="space-y-8">
-            <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto shadow-glow">
-              <Mic className="w-12 h-12 text-primary" />
+        {!audioPermissionGranted && !isConnected && !currentScenario && (
+          <Card className="p-12 max-w-3xl mx-auto text-center rounded-2xl border-2 border-primary/20 bg-background-secondary/30 backdrop-blur-sm shadow-glow">
+            <div className="space-y-8">
+              <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto shadow-glow">
+                <Mic className="w-12 h-12 text-primary" />
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-2xl font-bold text-foreground font-inter">Enable Voice Features</h3>
+                <p className="text-foreground/80 text-lg">
+                  Sharpen needs microphone access to provide voice-based roleplay training.
+                </p>
+              </div>
+              <Button 
+                onClick={requestAudioPermission} 
+                className="bg-primary hover:bg-primary/90 px-10 py-4 text-lg font-semibold shadow-glow hover:shadow-elegant transition-all duration-300 rounded-xl"
+              >
+                <Mic className="w-5 h-5 mr-3" />
+                Enable Microphone
+              </Button>
             </div>
-            <div className="space-y-3">
-              <h3 className="text-2xl font-bold text-foreground font-inter">Enable Voice Features</h3>
-              <p className="text-foreground/80 text-lg">
-                Vocalize.ai needs microphone access to provide voice-based roleplay training.
-              </p>
-            </div>
-            <Button 
-              onClick={requestAudioPermission} 
-              className="bg-primary hover:bg-primary/90 px-10 py-4 text-lg font-semibold shadow-glow hover:shadow-elegant transition-all duration-300 rounded-xl"
-            >
-              <Mic className="w-5 h-5 mr-3" />
-              Enable Microphone
-            </Button>
-          </div>
-        </Card>
-      )}
+          </Card>
+        )}
       </div>
     </div>
   );

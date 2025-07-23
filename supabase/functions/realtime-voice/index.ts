@@ -1,4 +1,3 @@
-
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
@@ -86,28 +85,58 @@ serve(async (req) => {
     let openAISocket: WebSocket | null = null;
     let isConnected = false;
     let sessionConfigured = false;
-    let sessionUpdateSent = false;  // Track if we've sent session.updated
-    let idleTimer: number | null = null;
-    const IDLE_TIMEOUT_MS = 60_000; // close connection if idle for 60s
+    let keepAliveInterval: number | null = null;
+    let connectionTimeout: number | null = null;
+    let heartbeatInterval: number | null = null;
 
-    const resetIdleTimer = () => {
-      if (idleTimer) {
-        clearTimeout(idleTimer);
+    // Prevent immediate shutdown with keep-alive mechanism
+    const startKeepAlive = () => {
+      if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
       }
-      idleTimer = setTimeout(() => {
-        console.log("⏱️ Closing idle OpenAI connection");
-        cleanup();
+      keepAliveInterval = setInterval(() => {
+        console.log("💓 Keep-alive heartbeat");
         if (socket.readyState === WebSocket.OPEN) {
-          socket.close();
+          try {
+            socket.send(JSON.stringify({ 
+              type: 'heartbeat', 
+              timestamp: new Date().toISOString() 
+            }));
+          } catch (error) {
+            console.error("❌ Keep-alive send error:", error);
+          }
         }
-      }, IDLE_TIMEOUT_MS);
+      }, 30000); // 30 second heartbeat
+    };
+
+    const startHeartbeat = () => {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+      heartbeatInterval = setInterval(() => {
+        if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
+          try {
+            openAISocket.send(JSON.stringify({ type: 'ping' }));
+          } catch (error) {
+            console.error("❌ Heartbeat send error:", error);
+          }
+        }
+      }, 20000); // 20 second OpenAI heartbeat
     };
 
     const cleanup = () => {
       console.log("🧹 Cleaning up connections");
-      if (idleTimer) {
-        clearTimeout(idleTimer);
-        idleTimer = null;
+      if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
+      }
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
       }
       if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
         openAISocket.close();
@@ -115,13 +144,21 @@ serve(async (req) => {
       openAISocket = null;
       isConnected = false;
       sessionConfigured = false;
-      sessionUpdateSent = false;
     };
 
     socket.onopen = async () => {
       try {
         console.log("🟢 Client WebSocket connection opened");
-        resetIdleTimer();
+        startKeepAlive();
+        
+        // Add connection timeout to prevent hanging
+        connectionTimeout = setTimeout(() => {
+          console.error("⏰ Connection timeout - closing after 60 seconds");
+          cleanup();
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.close(1000, "Connection timeout");
+          }
+        }, 60000);
         
         // Connect to OpenAI Realtime API
         const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
@@ -137,13 +174,15 @@ serve(async (req) => {
         openAISocket.onopen = () => {
           console.log("✅ Connected to OpenAI Realtime API");
           isConnected = true;
-          resetIdleTimer();
+          startHeartbeat();
           
           // Send connection established event to client
-          socket.send(JSON.stringify({
-            type: 'connection.established',
-            timestamp: new Date().toISOString()
-          }));
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'connection.established',
+              timestamp: new Date().toISOString()
+            }));
+          }
         };
 
         openAISocket.onmessage = (event) => {
@@ -199,100 +238,118 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
               sessionConfigured = true;
             }
 
-            // Forward ALL events to client first
-            socket.send(event.data);
-            console.log(`📤 Forwarded to client: ${data.type}`);
-
-            // Handle session.updated response from OpenAI - CRITICAL FIX
-            if (data.type === 'session.updated' && sessionConfigured && !sessionUpdateSent) {
-              console.log("🎯 CRITICAL: Received session.updated confirmation from OpenAI");
-              console.log("🎯 Session configuration confirmed, sending session.updated to client");
-              
-              // Send the session.updated event that the client is waiting for
-              socket.send(JSON.stringify({
-                type: 'session.updated',
-                session: data.session || {},
-                timestamp: new Date().toISOString()
-              }));
-              
-              sessionUpdateSent = true;
-              console.log("✅ session.updated event sent to client - should trigger CONFIGURED state");
+            // Forward ALL events to client
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(event.data);
+              console.log(`📤 Forwarded to client: ${data.type}`);
             }
 
-            resetIdleTimer();
+            // Handle session.updated response from OpenAI
+            if (data.type === 'session.updated' && sessionConfigured) {
+              console.log("🎯 Session configuration confirmed - client should now be in CONFIGURED state");
+              
+              // Send explicit confirmation to client
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                  type: 'session.configured',
+                  timestamp: new Date().toISOString(),
+                  message: 'Session is ready for scenario start'
+                }));
+              }
+            }
+
+            // Handle pong responses
+            if (data.type === 'pong') {
+              console.log("🏓 Received pong from OpenAI");
+            }
             
           } catch (error) {
             console.error("❌ Error processing OpenAI message:", error);
-            socket.send(
-              JSON.stringify({ type: 'error', error: 'Invalid JSON from OpenAI' })
-            );
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ 
+                type: 'error', 
+                error: 'Invalid JSON from OpenAI',
+                timestamp: new Date().toISOString()
+              }));
+            }
           }
         };
 
         openAISocket.onerror = (error) => {
           console.error("❌ OpenAI WebSocket error:", error);
-          socket.send(JSON.stringify({
-            type: 'error',
-            error: 'OpenAI connection failed'
-          }));
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'error',
+              error: 'OpenAI connection failed',
+              timestamp: new Date().toISOString()
+            }));
+          }
         };
 
         openAISocket.onclose = (event) => {
           console.log(`🔴 OpenAI WebSocket closed: ${event.code} ${event.reason}`);
           isConnected = false;
-          socket.send(JSON.stringify({
-            type: 'connection.closed',
-            code: event.code,
-            reason: event.reason
-          }));
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+              type: 'connection.closed',
+              code: event.code,
+              reason: event.reason,
+              timestamp: new Date().toISOString()
+            }));
+          }
         };
 
       } catch (error) {
         console.error("❌ Error in socket.onopen:", error);
-        socket.send(JSON.stringify({
-          type: 'error',
-          error: `Connection setup failed: ${error.message}`
-        }));
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'error',
+            error: `Connection setup failed: ${error.message}`,
+            timestamp: new Date().toISOString()
+          }));
+        }
       }
     };
 
     socket.onmessage = (event) => {
       try {
         if (!isConnected || !openAISocket || openAISocket.readyState !== WebSocket.OPEN) {
-          console.log("⚠️ Received message but OpenAI not connected, queuing...");
+          console.warn("⚠️ Received message but OpenAI not connected");
           return;
         }
 
         const data = JSON.parse(event.data);
         console.log(`📨 Client -> OpenAI: ${data.type}`);
 
+        // Handle heartbeat from client
+        if (data.type === 'heartbeat') {
+          console.log("💓 Received heartbeat from client");
+          return;
+        }
+
         // Forward client messages to OpenAI
         openAISocket.send(event.data);
-        resetIdleTimer();
 
       } catch (error) {
         console.error("❌ Error processing client message:", error);
-        socket.send(JSON.stringify({
-          type: 'error',
-          error: 'Invalid message format'
-        }));
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            type: 'error',
+            error: 'Invalid message format',
+            timestamp: new Date().toISOString()
+          }));
+        }
       }
     };
 
     socket.onerror = (error) => {
-      try {
-        console.error("❌ Client WebSocket error:", error);
-      } finally {
-        cleanup();
-      }
+      console.error("❌ Client WebSocket error:", error);
+      cleanup();
     };
 
     socket.onclose = (event) => {
-      try {
-        console.log(`🔴 Client WebSocket closed: ${event.code} ${event.reason}`);
-      } finally {
-        cleanup();
-      }
+      console.log(`🔴 Client WebSocket closed: ${event.code} ${event.reason}`);
+      cleanup();
     };
 
     return response;

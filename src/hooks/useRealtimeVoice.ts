@@ -9,11 +9,12 @@ import type {
   OpenAIWebSocketEvent,
 } from '@/types/realtimeEvents';
 
-// Phase 1: Event Standardization - CORRECTED MAPPINGS
+// Enhanced event mapping with new session.configured event
 const EVENTS = {
   CONNECTION_ESTABLISHED: 'connection.established',
-  SESSION_CREATED: 'session.created',     // ⚡️ must match server
-  SESSION_UPDATED: 'session.updated',     // ⚡️ must match server
+  SESSION_CREATED: 'session.created',
+  SESSION_UPDATED: 'session.updated',
+  SESSION_CONFIGURED: 'session.configured', // New event from Edge Function
   AUDIO_DELTA: 'response.audio.delta',
   AUDIO_DONE: 'response.audio.done',
   AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
@@ -22,22 +23,27 @@ const EVENTS = {
   TRANSCRIPTION_COMPLETED: 'conversation.item.input_audio_transcription.completed',
   RESPONSE_CREATED: 'response.created',
   CONNECTION_CLOSED: 'connection.closed',
+  HEARTBEAT: 'heartbeat',
   ERROR: 'error'
 } as const;
 
-// Connection state enum
+// Enhanced connection state enum
 enum ConnectionState {
   CLOSED = 'CLOSED',
   OPENING = 'OPENING',
+  ESTABLISHING = 'ESTABLISHING',
   CONFIGURED = 'CONFIGURED',
-  STARTED = 'STARTED'
+  STARTED = 'STARTED',
+  ERROR = 'ERROR'
 }
 
-// State machine actions
+// Enhanced state machine actions
 type StateAction = 
   | { type: 'OPENING' }
+  | { type: 'ESTABLISHING' }
   | { type: 'CONFIGURED' }
   | { type: 'STARTED' }
+  | { type: 'ERROR'; error: string }
   | { type: 'CLOSED' }
   | { type: 'RETRY' };
 
@@ -46,61 +52,70 @@ interface ConnectionStateContext {
   retryCount: number;
   lastError: string | null;
   sequenceId: number;
+  connectionQuality: 'good' | 'poor' | 'unknown';
 }
 
 const initialState: ConnectionStateContext = {
   state: ConnectionState.CLOSED,
   retryCount: 0,
   lastError: null,
-  sequenceId: 0
+  sequenceId: 0,
+  connectionQuality: 'unknown'
 };
 
-const maxRetries = 3;
+const maxRetries = 5; // Increased retry attempts
 
-// Phase 2: State Machine Hardening
+// Enhanced state machine with better error handling
 function connectionReducer(state: ConnectionStateContext, action: StateAction): ConnectionStateContext {
   const timestamp = new Date().toISOString();
   
   switch (action.type) {
     case 'OPENING':
-      if (state.state !== ConnectionState.CLOSED) {
-        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> OPENING`);
-        return state;
-      }
-      console.debug(`🔄 [${timestamp}] STATE -> OPENING (sequence: ${state.sequenceId + 1})`);
+      console.log(`🔄 [${timestamp}] STATE -> OPENING (sequence: ${state.sequenceId + 1})`);
       return { 
         ...state, 
         state: ConnectionState.OPENING, 
         sequenceId: state.sequenceId + 1,
-        lastError: null 
+        lastError: null,
+        connectionQuality: 'unknown'
       };
       
+    case 'ESTABLISHING':
+      console.log(`🔗 [${timestamp}] STATE -> ESTABLISHING (sequence: ${state.sequenceId})`);
+      return { ...state, state: ConnectionState.ESTABLISHING };
+      
     case 'CONFIGURED':
-      if (state.state !== ConnectionState.OPENING) {
-        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> CONFIGURED`);
-        return state;
-      }
-      console.debug(`✅ [${timestamp}] STATE -> CONFIGURED (sequence: ${state.sequenceId})`);
-      return { ...state, state: ConnectionState.CONFIGURED, retryCount: 0 };
+      console.log(`✅ [${timestamp}] STATE -> CONFIGURED (sequence: ${state.sequenceId})`);
+      return { 
+        ...state, 
+        state: ConnectionState.CONFIGURED, 
+        retryCount: 0,
+        connectionQuality: 'good'
+      };
       
     case 'STARTED':
-      if (state.state !== ConnectionState.CONFIGURED) {
-        console.warn(`⚠️ [${timestamp}] Invalid state transition: ${state.state} -> STARTED`);
-        return state;
-      }
-      console.debug(`🎭 [${timestamp}] STATE -> STARTED (sequence: ${state.sequenceId})`);
+      console.log(`🎭 [${timestamp}] STATE -> STARTED (sequence: ${state.sequenceId})`);
       return { ...state, state: ConnectionState.STARTED };
       
+    case 'ERROR':
+      console.error(`❌ [${timestamp}] STATE -> ERROR: ${action.error}`);
+      return { 
+        ...state, 
+        state: ConnectionState.ERROR, 
+        lastError: action.error,
+        connectionQuality: 'poor'
+      };
+      
     case 'CLOSED':
-      console.debug(`🔴 [${timestamp}] STATE -> CLOSED (sequence: ${state.sequenceId})`);
+      console.log(`🔴 [${timestamp}] STATE -> CLOSED (sequence: ${state.sequenceId})`);
       return { ...state, state: ConnectionState.CLOSED };
       
     case 'RETRY':
       if (state.retryCount >= maxRetries) {
         console.error(`❌ [${timestamp}] Max retries exceeded (${maxRetries})`);
-        return { ...state, state: ConnectionState.CLOSED };
+        return { ...state, state: ConnectionState.ERROR, lastError: 'Max retries exceeded' };
       }
-      console.debug(`🔄 [${timestamp}] RETRY attempt ${state.retryCount + 1}/${maxRetries}`);
+      console.log(`🔄 [${timestamp}] RETRY attempt ${state.retryCount + 1}/${maxRetries}`);
       return { ...state, retryCount: state.retryCount + 1 };
       
     default:
@@ -117,36 +132,33 @@ export const useRealtimeVoice = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [connectionStable, setConnectionStable] = useState(false);
   
-  // Derived states for backward compatibility
+  // Enhanced derived states
   const isConnected = state.state === ConnectionState.CONFIGURED || state.state === ConnectionState.STARTED;
-  const isConnecting = state.state === ConnectionState.OPENING;
+  const isConnecting = state.state === ConnectionState.OPENING || state.state === ConnectionState.ESTABLISHING;
   const isReadyToStart = state.state === ConnectionState.CONFIGURED;
   const isScenarioStarted = state.state === ConnectionState.STARTED;
-  
-  // DEBUG: Log current state for troubleshooting
-  console.log('🔍 Current state:', state.state, 'isReadyToStart:', isReadyToStart, 'isConnected:', isConnected);
+  const hasError = state.state === ConnectionState.ERROR;
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const configuredTimeoutRef = useRef<NodeJS.Timeout | null>(null); // NEW: Fallback timeout
   const gainNodeRef = useRef<GainNode | null>(null);
   const scenarioRef = useRef<Scenario | null>(null);
   const shouldReconnectRef = useRef<boolean>(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [retryAttempts, setRetryAttempts] = useState(0);
-  const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
-  const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionQualityRef = useRef<'good' | 'poor' | 'unknown'>('unknown');
 
-  // Phase 1: Structured logging helper
+  // Enhanced logging helper
   const logEvent = useCallback((direction: '▷' | '◁', event: string, data?: any) => {
     const timestamp = new Date().toISOString();
-    const sequenceInfo = `[seq:${state.sequenceId}]`;
-    console.debug(`${direction} [${timestamp}] ${sequenceInfo} ${event}`, data || '');
-  }, [state.sequenceId]);
+    const sequenceInfo = `[seq:${state.sequenceId}][${state.state}]`;
+    console.log(`${direction} [${timestamp}] ${sequenceInfo} ${event}`, data || '');
+  }, [state.sequenceId, state.state]);
 
   // Helper function to convert base64 to Uint8Array
   const base64ToUint8Array = (base64: string): Uint8Array => {
@@ -162,23 +174,19 @@ export const useRealtimeVoice = () => {
     try {
       logEvent('▷', 'AUDIO_INIT', 'Initializing audio context');
       
-      // Create AudioContext with proper sample rate
       audioContextRef.current = new AudioContext({ 
         sampleRate: 24000,
         latencyHint: 'interactive'
       });
       
-      // Create gain node for volume control
       gainNodeRef.current = audioContextRef.current.createGain();
       gainNodeRef.current.connect(audioContextRef.current.destination);
-      gainNodeRef.current.gain.value = 0.8; // Default volume
+      gainNodeRef.current.gain.value = 0.8;
       
-      // Resume audio context if suspended
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
       }
       
-      // Initialize audio queue
       audioQueueRef.current = new AudioQueue(audioContextRef.current);
       audioQueueRef.current.setVolume(0.8);
       
@@ -189,49 +197,70 @@ export const useRealtimeVoice = () => {
     }
   };
 
-  const sendAndAwaitResponse = useCallback((event: ClientWebSocketEvent, expectedResponseType?: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
-
-      const sequenceId = state.sequenceId;
-      logEvent('◁', 'SEND_EVENT', { type: event.type, sequenceId });
+  // Enhanced health check with better error handling
+  const testEdgeFunctionHealth = async (): Promise<boolean> => {
+    try {
+      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
+      const { data, error } = await supabase.functions.invoke('realtime-voice', {
+        body: { action: 'health' }
+      });
       
-      // Send the event
-      wsRef.current.send(JSON.stringify(event));
-      
-      // If we're expecting a specific response, wait for it
-      if (expectedResponseType) {
-        const responseHandler = (messageEvent: MessageEvent) => {
-          try {
-            const data = JSON.parse(messageEvent.data);
-            if (data.type === expectedResponseType) {
-              wsRef.current?.removeEventListener('message', responseHandler);
-              logEvent('▷', 'RESPONSE_RECEIVED', { type: expectedResponseType, sequenceId });
-              resolve();
-            }
-          } catch (error) {
-            // Continue listening for other messages
-          }
-        };
-        
-        wsRef.current.addEventListener('message', responseHandler);
-        
-        // Add timeout for safety
-        setTimeout(() => {
-          wsRef.current?.removeEventListener('message', responseHandler);
-          reject(new Error(`Response timeout for ${expectedResponseType}`));
-        }, 10000);
-      } else {
-        // For events that don't need a response, resolve immediately
-        resolve();
+      if (error) {
+        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
+        setConnectionError(`Edge function error: ${error.message}`);
+        return false;
       }
-    });
-  }, [state.sequenceId, logEvent]);
+      
+      if (data && data.hasOpenAIKey) {
+        logEvent('▷', 'HEALTH_CHECK_SUCCESS', 'Edge function healthy');
+        connectionQualityRef.current = 'good';
+        return true;
+      }
+      
+      if (data && !data.hasOpenAIKey) {
+        setConnectionError('OpenAI API key not configured in Supabase Edge Functions.');
+        return false;
+      }
+      
+      return false;
+    } catch (error) {
+      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
+      setConnectionError('Cannot reach edge function. Please check your connection.');
+      connectionQualityRef.current = 'poor';
+      return false;
+    }
+  };
 
-  // NEW: Manual scenario start function
+  // Enhanced heartbeat mechanism
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+    }
+    
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ 
+            type: 'heartbeat',
+            timestamp: new Date().toISOString()
+          }));
+          logEvent('◁', 'HEARTBEAT_SENT', 'Heartbeat sent to edge function');
+        } catch (error) {
+          logEvent('▷', 'HEARTBEAT_ERROR', error);
+          dispatch({ type: 'ERROR', error: 'Heartbeat failed' });
+        }
+      }
+    }, 25000); // 25 second heartbeat
+  }, [logEvent]);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
+
+  // Enhanced scenario start function
   const startScenario = useCallback(async () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.error('❌ START_SCENARIO_ERROR: WebSocket not connected');
@@ -253,22 +282,16 @@ export const useRealtimeVoice = () => {
 
     const scenario = scenarioRef.current;
     
-    if (!scenario.prompt) {
-      console.error('❌ START_SCENARIO_ERROR: No prompt found in scenario', scenario);
-      setConnectionError('Scenario prompt not found. Please try a different scenario.');
-      return;
-    }
-
     try {
       const requestId = generateUuid();
-      console.debug('▷ MANUAL_START_SCENARIO', { 
+      logEvent('▷', 'MANUAL_START_SCENARIO', { 
         scenarioId: scenario.id, 
         requestId, 
-        promptLength: scenario.prompt.length,
+        promptLength: scenario.prompt?.length || 0,
         openingMessage: scenario.openingMessage 
       });
       
-      // Step 1: Send system message with scenario prompt
+      // Send system message with scenario prompt
       const systemMessage: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
@@ -288,9 +311,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       };
 
       wsRef.current.send(JSON.stringify(systemMessage));
-      console.debug('▷ SENT_SYSTEM_MESSAGE', { requestId, scenarioId: scenario.id });
-
-      // Step 2: Send trigger message
+      
+      // Send trigger message
       const triggerMessage: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
@@ -306,12 +328,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       };
 
       wsRef.current.send(JSON.stringify(triggerMessage));
-      console.debug('▷ SENT_TRIGGER_MESSAGE', { requestId, scenarioId: scenario.id });
-
-      // Step 3: Request response
+      
+      // Request response
       const responseRequest: ClientWebSocketEvent = { type: 'response.create' };
       wsRef.current.send(JSON.stringify(responseRequest));
-      console.debug('▷ SENT_RESPONSE_REQUEST', { requestId, scenarioId: scenario.id });
 
       dispatch({ type: 'STARTED' });
       
@@ -319,112 +339,25 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       console.error('❌ MANUAL_START_SCENARIO_ERROR:', error);
       setConnectionError('Failed to start scenario. Please try again.');
     }
-  }, [state.state]);
-
-  const startHealthCheck = useCallback(() => {
-    if (healthCheckRef.current) {
-      clearInterval(healthCheckRef.current);
-    }
-    
-    healthCheckRef.current = setInterval(() => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        // Send a ping to check connection health
-        try {
-          wsRef.current.send(JSON.stringify({ type: 'ping' }));
-          logEvent('◁', 'HEALTH_PING', 'Sent health check ping');
-        } catch (error) {
-          logEvent('▷', 'HEALTH_PING_ERROR', error);
-          // Connection is broken, trigger reconnection
-          handleRetry();
-        }
-      }
-    }, 30000); // Check every 30 seconds
-  }, [logEvent]);
-
-  const stopHealthCheck = useCallback(() => {
-    if (healthCheckRef.current) {
-      clearInterval(healthCheckRef.current);
-      healthCheckRef.current = null;
-    }
-  }, []);
-
-  const scheduleReconnect = useCallback((reason: string) => {
-    if (!shouldReconnectRef.current) return;
-    
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    
-    const delay = Math.min(1000 * Math.pow(2, retryAttempts), 10000);
-    logEvent('▷', 'RECONNECT_SCHEDULED', `Reconnecting in ${delay}ms due to: ${reason}`);
-    
-    reconnectTimeoutRef.current = setTimeout(() => {
-      if (shouldReconnectRef.current && retryAttempts < maxRetries) {
-        setRetryAttempts(prev => prev + 1);
-        connect(currentScenario ?? undefined, true);
-      }
-    }, delay);
-  }, [retryAttempts, currentScenario, logEvent]);
-
-  const testEdgeFunctionHealth = async (): Promise<boolean> => {
-    try {
-      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
-      const { data, error } = await supabase.functions.invoke('realtime-voice', {
-        body: { action: 'health' }
-      });
-      
-      if (error) {
-        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
-        setConnectionError(`Edge function error: ${error.message}`);
-        return false;
-      }
-      
-      if (data) {
-        logEvent('▷', 'HEALTH_CHECK_SUCCESS', data);
-        
-        if (!data.hasOpenAIKey) {
-          setConnectionError('OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your secrets.');
-          return false;
-        }
-        
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
-      setConnectionError('Cannot reach edge function. Please check your connection.');
-      return false;
-    }
-  };
-
-  // NEW: Fallback timeout to force CONFIGURED state if session.updated doesn't arrive
-  const startConfiguredFallbackTimer = useCallback(() => {
-    if (configuredTimeoutRef.current) {
-      clearTimeout(configuredTimeoutRef.current);
-    }
-    
-    configuredTimeoutRef.current = setTimeout(() => {
-      console.warn('⚠️ FALLBACK: session.updated not received, forcing CONFIGURED state');
-      if (state.state === ConnectionState.OPENING) {
-        logEvent('▷', 'FALLBACK_CONFIGURED', 'Forcing CONFIGURED state after timeout');
-        dispatch({ type: 'CONFIGURED' });
-      }
-    }, 5000); // 5 second fallback - reduced from 8 to speed up UX
   }, [state.state, logEvent]);
 
+  // Enhanced connection function with better error handling
   const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {
     try {
       logEvent('▷', 'CONNECTION_START', 'Starting connection process');
       if (!skipDispatch) {
         dispatch({ type: 'OPENING' });
       }
+      
       setConnectionError(null);
+      setConnectionStable(false);
       shouldReconnectRef.current = true;
+      
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      
       setAiResponse('');
       setTranscript('');
       
@@ -432,52 +365,57 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       if (scenario) {
         setCurrentScenario(scenario);
         scenarioRef.current = scenario;
-        console.debug('▷ SCENARIO_SET', `Selected scenario: ${scenario.title}`, {
-          id: scenario.id,
-          hasPrompt: !!scenario.prompt,
-          promptLength: scenario.prompt?.length || 0,
-          openingMessage: scenario.openingMessage
-        });
+        logEvent('▷', 'SCENARIO_SET', `Selected scenario: ${scenario.title}`);
       }
       
       // Test edge function health first
       const isHealthy = await testEdgeFunctionHealth();
       if (!isHealthy) {
-        dispatch({ type: 'CLOSED' });
+        dispatch({ type: 'ERROR', error: 'Edge function health check failed' });
         return;
       }
       
       // Initialize audio system
       await initializeAudioContext();
 
-      // Use the correct WebSocket URL for Supabase Edge Functions
+      // Enhanced WebSocket connection
       const wsUrl = `wss://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`;
       logEvent('▷', 'WEBSOCKET_CONNECTING', `Connecting to: ${wsUrl}`);
       
       wsRef.current = new WebSocket(wsUrl);
 
+      // Connection timeout
+      connectionTimeoutRef.current = setTimeout(() => {
+        logEvent('▷', 'CONNECTION_TIMEOUT', 'Connection timeout after 30 seconds');
+        setConnectionError('Connection timeout. Please try again.');
+        dispatch({ type: 'ERROR', error: 'Connection timeout' });
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+      }, 30000);
+
       wsRef.current.onopen = () => {
-        logEvent('▷', 'WEBSOCKET_CONNECTED', 'WebSocket connected to Supabase edge function');
+        logEvent('▷', 'WEBSOCKET_CONNECTED', 'WebSocket connected');
+        dispatch({ type: 'ESTABLISHING' });
+        
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
-        startHealthCheck();
         
-        // Start fallback timer for CONFIGURED state
-        startConfiguredFallbackTimer();
+        startHeartbeat();
       };
 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: OpenAIWebSocketEvent = JSON.parse(event.data) as OpenAIWebSocketEvent;
-          console.debug('▷ RAW EVENT:', data.type, data);
-          logEvent('▷', 'EVENT_RECEIVED', { type: data.type, sequenceId: state.sequenceId });
+          logEvent('▷', 'EVENT_RECEIVED', { type: data.type });
 
           switch (data.type) {
             case EVENTS.CONNECTION_ESTABLISHED:
               logEvent('▷', 'CONNECTION_ESTABLISHED', 'OpenAI connection established');
               setConnectionError(null);
+              setConnectionStable(true);
               break;
 
             case EVENTS.SESSION_CREATED:
@@ -485,16 +423,13 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               break;
 
             case EVENTS.SESSION_UPDATED:
-              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY TO START SCENARIO');
-              console.debug('🎯 TRIGGERING CONFIGURED STATE');
-              
-              // Clear the fallback timer since we got the real event
-              if (configuredTimeoutRef.current) {
-                clearTimeout(configuredTimeoutRef.current);
-                configuredTimeoutRef.current = null;
-              }
-              
+              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated');
+              break;
+
+            case EVENTS.SESSION_CONFIGURED:
+              logEvent('▷', 'SESSION_CONFIGURED', 'Session ready for scenario start');
               dispatch({ type: 'CONFIGURED' });
+              setConnectionStable(true);
               break;
 
             case EVENTS.SPEECH_STARTED:
@@ -517,12 +452,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
             case EVENTS.AUDIO_DELTA:
               if (data.delta && audioQueueRef.current && audioContextRef.current) {
                 try {
-                  // ⚡️ FIRST AUDIO CHUNK LOGGING
                   if (!isAISpeaking) {
-                    console.debug('▷ RECEIVED_FIRST_AUDIO_CHUNK', data.delta.length, 'bytes');
+                    logEvent('▷', 'FIRST_AUDIO_CHUNK', `${data.delta.length} bytes`);
                   }
                   
-                  // Ensure audio context is running
                   if (audioContextRef.current.state === 'suspended') {
                     await audioContextRef.current.resume();
                   }
@@ -543,9 +476,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
             case EVENTS.AUDIO_TRANSCRIPT_DELTA:
               if (data.delta) {
-                // ⚡️ FIRST CHAT TOKEN LOGGING
                 if (!aiResponse) {
-                  console.debug('▷ RECEIVED_FIRST_CHAT_TOKEN', data.delta);
+                  logEvent('▷', 'FIRST_CHAT_TOKEN', data.delta);
                 }
                 setAiResponse(prev => prev + data.delta);
               }
@@ -554,6 +486,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
             case EVENTS.RESPONSE_CREATED:
               logEvent('▷', 'RESPONSE_CREATED', 'AI response started');
               setAiResponse('');
+              break;
+
+            case EVENTS.HEARTBEAT:
+              logEvent('▷', 'HEARTBEAT_RECEIVED', 'Heartbeat from edge function');
               break;
 
             case EVENTS.ERROR:
@@ -566,29 +502,14 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
                 errorMessage = data.error;
               }
               
-              // Phase 3: Enhanced error categorization
-              if (errorMessage.includes('rate_limit')) {
-                setConnectionError('OpenAI API rate limit exceeded. Please wait a moment and try again.');
-              } else if (errorMessage.includes('insufficient_quota')) {
-                setConnectionError('OpenAI API quota exceeded. Please check your OpenAI account billing.');
-              } else if (errorMessage.includes('invalid_api_key') || errorMessage.includes('API key')) {
-                setConnectionError('Invalid OpenAI API key. Please check the configuration in your Supabase secrets.');
-              } else if (errorMessage.includes('not configured')) {
-                setConnectionError('OpenAI API key not configured. Please add OPENAI_API_KEY to your Supabase Edge Functions secrets.');
-              } else {
-                setConnectionError(`Connection Error: ${errorMessage}`);
-              }
-              dispatch({ type: 'CLOSED' });
+              setConnectionError(`Connection Error: ${errorMessage}`);
+              dispatch({ type: 'ERROR', error: errorMessage });
               break;
 
             case EVENTS.CONNECTION_CLOSED:
               logEvent('▷', 'CONNECTION_CLOSED', 'OpenAI connection closed');
               dispatch({ type: 'CLOSED' });
-              setConnectionError('Connection was closed unexpectedly. Please try connecting again.');
-              break;
-
-            case 'pong':
-              logEvent('▷', 'HEALTH_PONG', 'Received health check pong');
+              setConnectionError('Connection was closed unexpectedly.');
               break;
 
             default:
@@ -596,89 +517,62 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           }
         } catch (error) {
           logEvent('▷', 'MESSAGE_PARSE_ERROR', error);
-          setConnectionError('Invalid response from server. Please try again.');
+          setConnectionError('Invalid response from server.');
         }
       };
 
       wsRef.current.onerror = (error) => {
         logEvent('▷', 'WEBSOCKET_ERROR', error);
-        setConnectionError('WebSocket connection failed. Please check your internet connection and try again.');
-        if (connectionTimeoutRef.current) {
-          clearTimeout(connectionTimeoutRef.current);
-          connectionTimeoutRef.current = null;
-        }
+        setConnectionError('WebSocket connection failed.');
+        dispatch({ type: 'ERROR', error: 'WebSocket connection failed' });
       };
 
       wsRef.current.onclose = (event) => {
         logEvent('▷', 'WEBSOCKET_CLOSED', `Code: ${event.code}, Reason: ${event.reason}`);
+        
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         
-        // Clear fallback timer
-        if (configuredTimeoutRef.current) {
-          clearTimeout(configuredTimeoutRef.current);
-          configuredTimeoutRef.current = null;
-        }
-        
-        stopHealthCheck();
+        stopHeartbeat();
         dispatch({ type: 'CLOSED' });
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
+        setConnectionStable(false);
         
-        // Enhanced error messages based on close codes
-        if (event.code === 1006) {
-          setConnectionError('Connection failed unexpectedly. This may be due to server issues. Please try again.');
-        } else if (event.code === 1000) {
-          // Clean close, don't show error unless we weren't expecting it
-          if (!connectionError) {
-            setConnectionError(null);
-          }
-        } else if (event.code === 1001) {
-          setConnectionError('Server is restarting. Please try again in a moment.');
-        } else if (event.code === 1002) {
-          setConnectionError('Protocol error. Please refresh the page and try again.');
-        } else if (event.code === 1011) {
-          setConnectionError('Server error occurred. Please check if OpenAI API key is configured properly.');
-        } else {
-          setConnectionError(`Connection closed (${event.code}). Please try again.`);
+        if (event.code !== 1000) {
+          setConnectionError(`Connection closed unexpectedly (${event.code})`);
+          scheduleReconnect('close');
         }
-        scheduleReconnect('close');
       };
-
-      // Phase 3: Global timeout watchdog
-      if (connectionTimeoutRef.current) {
-        clearTimeout(connectionTimeoutRef.current);
-      }
-      connectionTimeoutRef.current = setTimeout(() => {
-        logEvent('▷', 'CONNECTION_TIMEOUT', 'Connection timeout after 20 seconds');
-        setConnectionError('Connection timeout. The server may be overloaded. Please try again.');
-        if (wsRef.current) {
-          wsRef.current.close();
-        }
-        handleRetry();
-      }, 20000);
 
     } catch (error) {
       logEvent('▷', 'CONNECTION_ERROR', error);
-      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
-      dispatch({ type: 'CLOSED' });
-      handleRetry();
+      setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      dispatch({ type: 'ERROR', error: 'Connection failed' });
     }
-  }, [state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect, startConfiguredFallbackTimer]);
+  }, [logEvent, startHeartbeat, stopHeartbeat]);
 
-  const handleRetry = useCallback(() => {
-    if (state.retryCount < maxRetries) {
-      logEvent('▷', 'RETRY_ATTEMPT', `Retrying connection (${state.retryCount + 1}/${maxRetries})`);
-      dispatch({ type: 'RETRY' });
-      connect(currentScenario ?? undefined, true);
-    } else {
-      logEvent('▷', 'MAX_RETRIES_EXCEEDED', 'Max retries reached');
-      dispatch({ type: 'CLOSED' });
+  // Enhanced retry mechanism with exponential backoff
+  const scheduleReconnect = useCallback((reason: string) => {
+    if (!shouldReconnectRef.current || state.retryCount >= maxRetries) return;
+    
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
     }
-  }, [state.retryCount, maxRetries, connect, currentScenario, logEvent]);
+    
+    const delay = Math.min(1000 * Math.pow(2, state.retryCount), 30000);
+    logEvent('▷', 'RECONNECT_SCHEDULED', `Reconnecting in ${delay}ms due to: ${reason}`);
+    
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (shouldReconnectRef.current) {
+        dispatch({ type: 'RETRY' });
+        connect(currentScenario ?? undefined, true);
+      }
+    }, delay);
+  }, [state.retryCount, currentScenario, logEvent, connect]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -768,6 +662,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       logEvent('▷', 'DISCONNECT_START', 'Disconnecting...');
       stopAudioCapture();
       shouldReconnectRef.current = false;
+      
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -778,12 +673,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         connectionTimeoutRef.current = null;
       }
       
-      if (configuredTimeoutRef.current) {
-        clearTimeout(configuredTimeoutRef.current);
-        configuredTimeoutRef.current = null;
-      }
-      
-      stopHealthCheck();
+      stopHeartbeat();
       
       if (audioQueueRef.current) {
         try {
@@ -815,25 +705,21 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       gainNodeRef.current = null;
       scenarioRef.current = null;
       
-      // Only update state if component is still mounted
-      try {
-        dispatch({ type: 'CLOSED' });
-        setIsRecording(false);
-        setIsAISpeaking(false);
-        setIsUserSpeaking(false);
-        setTranscript('');
-        setAiResponse('');
-        setCurrentScenario(null);
-        setConnectionError(null);
-        logEvent('▷', 'DISCONNECT_SUCCESS', 'Disconnected successfully');
-      } catch (error) {
-        // Component might be unmounted, ignore state updates
-        logEvent('▷', 'DISCONNECT_STATE_ERROR', error);
-      }
+      dispatch({ type: 'CLOSED' });
+      setIsRecording(false);
+      setIsAISpeaking(false);
+      setIsUserSpeaking(false);
+      setTranscript('');
+      setAiResponse('');
+      setCurrentScenario(null);
+      setConnectionError(null);
+      setConnectionStable(false);
+      
+      logEvent('▷', 'DISCONNECT_SUCCESS', 'Disconnected successfully');
     } catch (error) {
       logEvent('▷', 'DISCONNECT_ERROR', error);
     }
-  }, [stopAudioCapture, stopHealthCheck, logEvent]);
+  }, [stopAudioCapture, stopHeartbeat, logEvent]);
 
   const retryConnection = useCallback(() => {
     logEvent('▷', 'RETRY_CONNECTION', 'User requested retry');
@@ -860,9 +746,13 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     aiResponse,
     currentScenario,
     connectionError,
+    connectionStable,
+    hasError,
     audioContext: audioContextRef.current,
     isReadyToStart,
     isScenarioStarted,
+    connectionQuality: state.connectionQuality,
+    retryCount: state.retryCount,
     connect,
     startScenario,
     startAudioCapture,
@@ -870,8 +760,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     sendTextMessage,
     setVolume,
     disconnect,
-    retryConnection,
-    retryAttempts,
-    lastFailureTime
+    retryConnection
   };
 };
