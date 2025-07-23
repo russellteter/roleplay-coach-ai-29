@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -8,11 +9,11 @@ import type {
   OpenAIWebSocketEvent,
 } from '@/types/realtimeEvents';
 
-// Phase 1: Event Standardization
+// Phase 1: Event Standardization - CORRECTED MAPPINGS
 const EVENTS = {
   CONNECTION_ESTABLISHED: 'connection.established',
-  SESSION_CREATED: 'session.created',
-  SESSION_UPDATED: 'response.audio.delta',
+  SESSION_CREATED: 'session.create',     // ⚡️ must match server
+  SESSION_UPDATED: 'session.update',     // ⚡️ must match server
   AUDIO_DELTA: 'response.audio.delta',
   AUDIO_DONE: 'response.audio.done',
   AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
@@ -427,6 +428,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       wsRef.current.onmessage = async (event) => {
         try {
           const data: OpenAIWebSocketEvent = JSON.parse(event.data) as OpenAIWebSocketEvent;
+          console.debug('▷ RAW EVENT:', data.type, data);
           logEvent('▷', 'EVENT_RECEIVED', { type: data.type, sequenceId: state.sequenceId });
 
           switch (data.type) {
