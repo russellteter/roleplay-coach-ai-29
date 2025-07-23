@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, RotateCcw, Play, Headset, Heart, Scale, RefreshCw, AlertTriangle, Users } from 'lucide-react';
 import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
@@ -51,7 +51,10 @@ const VoiceDemo = () => {
     aiResponse,
     currentScenario,
     connectionError,
+    isReadyToStart,
+    isScenarioStarted,
     connect,
+    startScenario,
     startAudioCapture,
     stopAudioCapture,
     disconnect,
@@ -89,7 +92,7 @@ const VoiceDemo = () => {
     }
   };
 
-  const handleScenarioSelect = async (scenario: Scenario) => {
+  const handleStartVoiceSession = async (scenario: Scenario) => {
     if (!audioPermissionGranted) {
       await requestAudioPermission();
       if (!audioPermissionGranted) return;
@@ -98,13 +101,29 @@ const VoiceDemo = () => {
     try {
       await connect(scenario);
       toast({
-        title: "Starting Voice Conversation",
-        description: "You're now live with Sharpen. Speak naturally. Sharpen will talk back just like a real person.",
+        title: "Voice Session Started",
+        description: "Microphone is ready. Click 'Begin Roleplay' to start the conversation.",
       });
     } catch (error) {
       toast({
         title: "Connection Failed",
         description: "We couldn't connect. Please refresh and try again, or check your audio settings.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBeginRoleplay = async () => {
+    try {
+      await startScenario();
+      toast({
+        title: "Roleplay Started",
+        description: "AI is now speaking. The conversation has begun!",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Start Roleplay",
+        description: "Could not start the scenario. Please try again.",
         variant: "destructive",
       });
     }
@@ -219,8 +238,7 @@ const VoiceDemo = () => {
               {filteredScenarios.map((scenario) => (
                 <Card
                   key={scenario.id}
-                  className="p-6 cursor-pointer hover:shadow-xl transition-all duration-300 hover:border-primary/50 group rounded-xl border-2 hover:scale-[1.02] bg-gradient-to-br from-background to-muted/20"
-                  onClick={() => handleScenarioSelect(scenario)}
+                  className="p-6 hover:shadow-xl transition-all duration-300 hover:border-primary/50 group rounded-xl border-2 hover:scale-[1.02] bg-gradient-to-br from-background to-muted/20"
                 >
                   <div className="space-y-4">
                     <h4 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -232,12 +250,20 @@ const VoiceDemo = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center text-primary text-sm font-medium group-hover:text-primary/80 transition-colors">
                         <Play className="w-4 h-4 mr-2" />
-                        <span>Start Voice Conversation</span>
+                        <span>Start Voice Session</span>
                       </div>
                       <div className="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full font-medium">
                         Voice Practice
                       </div>
                     </div>
+                    
+                    <Button
+                      onClick={() => handleStartVoiceSession(scenario)}
+                      disabled={isConnecting}
+                      className="w-full bg-primary hover:bg-primary/90 text-white"
+                    >
+                      {isConnecting ? 'Connecting...' : 'Start Voice Session'}
+                    </Button>
                   </div>
                 </Card>
               ))}
@@ -261,7 +287,12 @@ const VoiceDemo = () => {
                 {currentScenario.title}
               </h3>
               <p className="text-muted-foreground">
-                You're now live with Sharpen. Speak naturally. Sharpen will talk back just like a real person.
+                {isReadyToStart && !isScenarioStarted ? 
+                  'Voice session is ready. Click "Begin Roleplay" to start the conversation.' :
+                  isScenarioStarted ? 
+                  'You\'re now live with Sharpen. Speak naturally. Sharpen will talk back just like a real person.' :
+                  'Setting up voice session...'
+                }
               </p>
             </div>
           )}
@@ -288,26 +319,46 @@ const VoiceDemo = () => {
           {/* Connection Status */}
           <div className="text-center mb-6">
             <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
-              isConnected ? 'bg-green-100 text-green-800' :
+              isConnected && isScenarioStarted ? 'bg-green-100 text-green-800' :
+              isConnected && isReadyToStart ? 'bg-blue-100 text-blue-800' :
               isConnecting ? 'bg-yellow-100 text-yellow-800' :
               connectionError ? 'bg-red-100 text-red-800' :
               'bg-gray-100 text-gray-600'
             }`}>
               <div className={`w-2 h-2 rounded-full mr-2 ${
-                isConnected ? 'bg-green-500' :
+                isConnected && isScenarioStarted ? 'bg-green-500' :
+                isConnected && isReadyToStart ? 'bg-blue-500' :
                 isConnecting ? 'bg-yellow-500 animate-pulse' :
                 connectionError ? 'bg-red-500' :
                 'bg-gray-400'
               }`}></div>
-              {isConnected ? 'Connected - Ready to Practice' :
+              {isConnected && isScenarioStarted ? 'Live Roleplay - Speaking with AI' :
+               isConnected && isReadyToStart ? 'Ready to Begin Roleplay' :
                isConnecting ? 'Connecting...' :
                connectionError ? 'Connection Error' :
                'Disconnected'}
             </div>
           </div>
 
+          {/* Begin Roleplay Button - Only show when ready */}
+          {isReadyToStart && !isScenarioStarted && (
+            <div className="text-center mb-6">
+              <Button
+                onClick={handleBeginRoleplay}
+                size="lg"
+                className="bg-green-500 hover:bg-green-600 text-white px-8 py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all"
+              >
+                <Users className="w-6 h-6 mr-2" />
+                Begin Roleplay
+              </Button>
+              <p className="text-sm text-muted-foreground mt-2">
+                Click to start the AI conversation - the AI will speak first!
+              </p>
+            </div>
+          )}
+
           {/* Voice Controls */}
-          {isConnected && (
+          {isScenarioStarted && (
             <div className="space-y-6">
               {/* Microphone Control */}
               <div className="text-center">

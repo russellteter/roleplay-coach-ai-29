@@ -28,7 +28,10 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
     aiResponse,
     currentScenario,
     connectionError,
+    isReadyToStart,
+    isScenarioStarted,
     connect,
+    startScenario,
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
@@ -44,17 +47,33 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
     scenario.category === category
   ).slice(0, 4);
 
-  const handleConnectWithScenario = async (scenario: Scenario) => {
+  const handleStartVoiceSession = async (scenario: Scenario) => {
     try {
       await connect(scenario);
       toast({
-        title: "Scenario Starting",
-        description: `Preparing ${scenario.title} roleplay...`,
+        title: "Voice Session Started",
+        description: "Microphone is ready. Click 'Begin Roleplay' to start the conversation.",
       });
     } catch (error) {
       toast({
         title: "Connection Failed",
-        description: "Could not start scenario",
+        description: "Could not start voice session",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleBeginRoleplay = async () => {
+    try {
+      await startScenario();
+      toast({
+        title: "Roleplay Started",
+        description: "AI is now speaking. The conversation has begun!",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Start Roleplay",
+        description: "Could not start the scenario. Please try again.",
         variant: "destructive",
       });
     }
@@ -118,8 +137,7 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
               {availableScenarios.map((scenario) => (
                 <Card
                   key={scenario.id}
-                  className="p-4 cursor-pointer hover:shadow-lg transition-all duration-200 hover:border-primary/30 group"
-                  onClick={() => handleConnectWithScenario(scenario)}
+                  className="p-4 hover:shadow-lg transition-all duration-200 hover:border-primary/30 group"
                 >
                   <div className="space-y-2">
                     <h4 className="font-medium text-foreground group-hover:text-primary transition-colors">
@@ -130,8 +148,15 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
                     </p>
                     <div className="flex items-center text-primary text-sm pt-2">
                       <Play className="w-4 h-4 mr-2" />
-                      <span>Start Voice Conversation</span>
+                      <span>Start Voice Session</span>
                     </div>
+                    <Button
+                      onClick={() => handleStartVoiceSession(scenario)}
+                      disabled={isConnecting}
+                      className="w-full mt-2"
+                    >
+                      {isConnecting ? 'Connecting...' : 'Start Voice Session'}
+                    </Button>
                   </div>
                 </Card>
               ))}
@@ -151,9 +176,11 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
             {currentScenario.description}
           </p>
           <div className="text-xs text-blue-700 dark:text-blue-300 font-medium">
-            💡 {isConnected 
-              ? "Speak naturally. The AI will play the other role and guide you through the scenario."
-              : "Connecting to voice system..."
+            💡 {isReadyToStart && !isScenarioStarted ? 
+              "Voice session is ready. Click 'Begin Roleplay' to start the conversation." :
+              isScenarioStarted ? 
+              "Speak naturally. The AI will play the other role and guide you through the scenario." :
+              "Setting up voice session..."
             }
           </div>
         </Card>
@@ -164,14 +191,16 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
         <div className="flex items-center justify-between p-4 bg-card border border-border rounded-xl shadow-sm">
           <div className="flex items-center space-x-3">
             <div className={`w-3 h-3 rounded-full ${
-              isConnected ? 'bg-green-500' : 
+              isConnected && isScenarioStarted ? 'bg-green-500' :
+              isConnected && isReadyToStart ? 'bg-blue-500' :
               isConnecting ? 'bg-yellow-500 animate-pulse' : 
               connectionError ? 'bg-red-500' :
               'bg-gray-400'
             }`}></div>
             <div className="flex flex-col">
               <span className="font-medium text-foreground">
-                {isConnected ? 'Connected - Ready to practice!' : 
+                {isConnected && isScenarioStarted ? 'Live Roleplay - Ready to practice!' :
+                 isConnected && isReadyToStart ? 'Voice session ready - Ready to begin!' :
                  isConnecting ? 'Connecting...' : 
                  connectionError ? 'Connection Error' :
                  'Disconnected'}
@@ -207,8 +236,28 @@ const CleanVoiceInterface = ({ category }: CleanVoiceInterfaceProps) => {
         </div>
       )}
 
+      {/* Begin Roleplay Button */}
+      {isReadyToStart && !isScenarioStarted && (
+        <div className="text-center p-6 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <h4 className="font-medium text-green-800 dark:text-green-200 mb-2">
+            Voice Session Ready
+          </h4>
+          <p className="text-sm text-green-700 dark:text-green-300 mb-4">
+            Your microphone is connected and ready. Click below to begin the roleplay conversation.
+          </p>
+          <Button
+            onClick={handleBeginRoleplay}
+            size="lg"
+            className="bg-green-500 hover:bg-green-600 text-white"
+          >
+            <Users className="w-5 h-5 mr-2" />
+            Begin Roleplay
+          </Button>
+        </div>
+      )}
+
       {/* Voice Controls */}
-      {isConnected && (
+      {isScenarioStarted && (
         <div className="space-y-6">
           {/* Microphone Status */}
           <div className="text-center p-6 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">

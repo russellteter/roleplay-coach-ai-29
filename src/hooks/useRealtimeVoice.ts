@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { v4 as generateUuid } from 'uuid';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
@@ -117,11 +118,12 @@ export const useRealtimeVoice = () => {
   const [aiResponse, setAiResponse] = useState('');
   const [currentScenario, setCurrentScenario] = useState<Scenario | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [shouldStartScenario, setShouldStartScenario] = useState(false);
   
   // Derived states for backward compatibility
   const isConnected = state.state === ConnectionState.CONFIGURED || state.state === ConnectionState.STARTED;
   const isConnecting = state.state === ConnectionState.OPENING;
+  const isReadyToStart = state.state === ConnectionState.CONFIGURED;
+  const isScenarioStarted = state.state === ConnectionState.STARTED;
   
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -135,7 +137,6 @@ export const useRealtimeVoice = () => {
   const [retryAttempts, setRetryAttempts] = useState(0);
   const [lastFailureTime, setLastFailureTime] = useState<number | null>(null);
   const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
-  const scenarioOpeningSentRef = useRef<boolean>(false);
 
   // Phase 1: Structured logging helper
   const logEvent = useCallback((direction: '▷' | '◁', event: string, data?: any) => {
@@ -227,22 +228,37 @@ export const useRealtimeVoice = () => {
     });
   }, [state.sequenceId, logEvent]);
 
-  // ⚡️ SIMPLIFIED: sendScenarioOpening - remove complex async patterns
-  const sendScenarioOpening = useCallback(async (scenario: Scenario) => {
+  // NEW: Manual scenario start function
+  const startScenario = useCallback(async () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error('❌ SENDING_SCENARIO_OPENING_ERROR: WebSocket not connected');
+      console.error('❌ START_SCENARIO_ERROR: WebSocket not connected');
+      setConnectionError('WebSocket not connected. Please start voice session first.');
       return;
     }
 
+    if (state.state !== ConnectionState.CONFIGURED) {
+      console.error('❌ START_SCENARIO_ERROR: Not in CONFIGURED state', state.state);
+      setConnectionError('Voice session not ready. Please wait for connection.');
+      return;
+    }
+
+    if (!scenarioRef.current) {
+      console.error('❌ START_SCENARIO_ERROR: No scenario selected');
+      setConnectionError('No scenario selected. Please select a scenario first.');
+      return;
+    }
+
+    const scenario = scenarioRef.current;
+    
     if (!scenario.prompt) {
-      console.error('❌ SENDING_SCENARIO_OPENING_ERROR: No prompt found in scenario', scenario);
+      console.error('❌ START_SCENARIO_ERROR: No prompt found in scenario', scenario);
       setConnectionError('Scenario prompt not found. Please try a different scenario.');
       return;
     }
 
     try {
       const requestId = generateUuid();
-      console.debug('▷ SENDING_SCENARIO_OPENING', { 
+      console.debug('▷ MANUAL_START_SCENARIO', { 
         scenarioId: scenario.id, 
         requestId, 
         promptLength: scenario.prompt.length,
@@ -295,22 +311,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       console.debug('▷ SENT_RESPONSE_REQUEST', { requestId, scenarioId: scenario.id });
 
       dispatch({ type: 'STARTED' });
-      scenarioOpeningSentRef.current = true;
-      setShouldStartScenario(false);
       
     } catch (error) {
-      console.error('❌ SENDING_SCENARIO_OPENING_ERROR:', error);
+      console.error('❌ MANUAL_START_SCENARIO_ERROR:', error);
       setConnectionError('Failed to start scenario. Please try again.');
     }
-  }, []);
-
-  // Auto-start scenario when conditions are met
-  useEffect(() => {
-    if (shouldStartScenario && state.state === ConnectionState.CONFIGURED && scenarioRef.current && !scenarioOpeningSentRef.current) {
-      console.debug('▷ AUTO_START_SCENARIO_EFFECT', `Starting scenario: ${scenarioRef.current.title}`);
-      sendScenarioOpening(scenarioRef.current);
-    }
-  }, [shouldStartScenario, state.state, sendScenarioOpening]);
+  }, [state.state]);
 
   const startHealthCheck = useCallback(() => {
     if (healthCheckRef.current) {
@@ -397,8 +403,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       }
       setConnectionError(null);
       shouldReconnectRef.current = true;
-      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
-      setShouldStartScenario(false); // Reset scenario start flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -460,14 +464,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               break;
 
             case EVENTS.SESSION_UPDATED:
-              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY FOR SCENARIO');
+              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY TO START SCENARIO');
               dispatch({ type: 'CONFIGURED' });
-              
-              // Set flag to start scenario instead of calling it directly
-              if (scenarioRef.current && !scenarioOpeningSentRef.current) {
-                console.debug('▷ TRIGGER_SCENARIO_START', `Triggering scenario start: ${scenarioRef.current.title}`);
-                setShouldStartScenario(true);
-              }
               break;
 
             case EVENTS.SPEECH_STARTED:
@@ -594,8 +592,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         setIsRecording(false);
         setIsAISpeaking(false);
         setIsUserSpeaking(false);
-        scenarioOpeningSentRef.current = false; // Reset scenario opening flag
-        setShouldStartScenario(false); // Reset scenario start flag
         
         // Enhanced error messages based on close codes
         if (event.code === 1006) {
@@ -636,7 +632,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       dispatch({ type: 'CLOSED' });
       handleRetry();
     }
-  }, [sendScenarioOpening, state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect]);
+  }, [state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect]);
 
   const handleRetry = useCallback(() => {
     if (state.retryCount < maxRetries) {
@@ -737,8 +733,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       logEvent('▷', 'DISCONNECT_START', 'Disconnecting...');
       stopAudioCapture();
       shouldReconnectRef.current = false;
-      scenarioOpeningSentRef.current = false; // Reset scenario opening flag
-      setShouldStartScenario(false); // Reset scenario start flag
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -827,7 +821,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     currentScenario,
     connectionError,
     audioContext: audioContextRef.current,
+    isReadyToStart,
+    isScenarioStarted,
     connect,
+    startScenario,
     startAudioCapture,
     stopAudioCapture,
     sendTextMessage,
