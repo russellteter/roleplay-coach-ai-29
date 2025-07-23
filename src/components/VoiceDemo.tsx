@@ -192,7 +192,7 @@ const VoiceDemo = () => {
               AI Voice Coaching Platform
             </h1>
             <p className="text-xl text-foreground/90 font-medium">
-              Revolutionizing critical conversation training
+              Critical Conversation Training
             </p>
           </div>
 
