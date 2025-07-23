@@ -190,9 +190,9 @@ serve(async (req) => {
             const data = JSON.parse(event.data);
             console.log(`📨 OpenAI -> Edge: ${data.type}`);
 
-            // Handle session.create to send our optimized configuration
-            if (data.type === 'session.create') {
-              console.log("⚙️ Received session.create, sending session configuration");
+            // Handle session.created to send our optimized configuration
+            if (data.type === 'session.created') {
+              console.log("⚙️ Received session.created, sending session configuration");
               
               const sessionConfig: SessionUpdateEvent = {
                 type: 'session.update',
@@ -235,27 +235,30 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
               console.log("📤 Sending session configuration to OpenAI");
               openAISocket.send(JSON.stringify(sessionConfig));
-              sessionConfigured = true;
             }
 
-            // Forward ALL events to client
+            // Handle session.updated response from OpenAI - CRITICAL FIX
+            if (data.type === 'session.updated') {
+              console.log("🎯 Session updated by OpenAI - marking as configured");
+              sessionConfigured = true;
+              
+              // Send explicit session ready event to client
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({
+                  type: 'session.ready',
+                  timestamp: new Date().toISOString(),
+                  message: 'Session is configured and ready for scenario start'
+                }));
+                console.log("📤 Sent session.ready to client");
+              }
+            }
+
+            // Forward ALL events to client with enhanced logging
             if (socket.readyState === WebSocket.OPEN) {
               socket.send(event.data);
               console.log(`📤 Forwarded to client: ${data.type}`);
-            }
-
-            // Handle session.updated response from OpenAI
-            if (data.type === 'session.updated' && sessionConfigured) {
-              console.log("🎯 Session configuration confirmed - client should now be in CONFIGURED state");
-              
-              // Send explicit confirmation to client
-              if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({
-                  type: 'session.configured',
-                  timestamp: new Date().toISOString(),
-                  message: 'Session is ready for scenario start'
-                }));
-              }
+            } else {
+              console.warn(`⚠️ Cannot forward ${data.type} - client socket not open`);
             }
 
             // Handle pong responses
@@ -289,6 +292,7 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
         openAISocket.onclose = (event) => {
           console.log(`🔴 OpenAI WebSocket closed: ${event.code} ${event.reason}`);
           isConnected = false;
+          sessionConfigured = false;
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({
               type: 'connection.closed',

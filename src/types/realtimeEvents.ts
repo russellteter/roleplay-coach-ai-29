@@ -1,3 +1,4 @@
+
 export type TextContent = {
   type: 'text';
   text: string;
@@ -41,6 +42,12 @@ export interface SessionUpdate {
 export interface SessionUpdated {
   type: 'session.updated';
   session?: unknown;
+}
+
+export interface SessionReady {
+  type: 'session.ready';
+  timestamp?: string;
+  message?: string;
 }
 
 export interface SpeechStarted {
@@ -99,6 +106,7 @@ export type OpenAIWebSocketEvent =
   | SessionCreated
   | SessionUpdate
   | SessionUpdated
+  | SessionReady
   | SpeechStarted
   | SpeechStopped
   | InputAudioTranscriptionCompleted

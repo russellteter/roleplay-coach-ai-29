@@ -9,12 +9,12 @@ import type {
   OpenAIWebSocketEvent,
 } from '@/types/realtimeEvents';
 
-// Enhanced event mapping with new session.configured event
+// Enhanced event mapping with new session.ready event
 const EVENTS = {
   CONNECTION_ESTABLISHED: 'connection.established',
   SESSION_CREATED: 'session.created',
   SESSION_UPDATED: 'session.updated',
-  SESSION_CONFIGURED: 'session.configured', // New event from Edge Function
+  SESSION_READY: 'session.ready', // New event from Edge Function
   AUDIO_DELTA: 'response.audio.delta',
   AUDIO_DONE: 'response.audio.done',
   AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
@@ -32,7 +32,8 @@ enum ConnectionState {
   CLOSED = 'CLOSED',
   OPENING = 'OPENING',
   ESTABLISHING = 'ESTABLISHING',
-  CONFIGURED = 'CONFIGURED',
+  CONFIGURING = 'CONFIGURING',
+  READY = 'READY',
   STARTED = 'STARTED',
   ERROR = 'ERROR'
 }
@@ -41,7 +42,8 @@ enum ConnectionState {
 type StateAction = 
   | { type: 'OPENING' }
   | { type: 'ESTABLISHING' }
-  | { type: 'CONFIGURED' }
+  | { type: 'CONFIGURING' }
+  | { type: 'READY' }
   | { type: 'STARTED' }
   | { type: 'ERROR'; error: string }
   | { type: 'CLOSED' }
@@ -63,7 +65,7 @@ const initialState: ConnectionStateContext = {
   connectionQuality: 'unknown'
 };
 
-const maxRetries = 5; // Increased retry attempts
+const maxRetries = 5;
 
 // Enhanced state machine with better error handling
 function connectionReducer(state: ConnectionStateContext, action: StateAction): ConnectionStateContext {
@@ -84,11 +86,15 @@ function connectionReducer(state: ConnectionStateContext, action: StateAction): 
       console.log(`🔗 [${timestamp}] STATE -> ESTABLISHING (sequence: ${state.sequenceId})`);
       return { ...state, state: ConnectionState.ESTABLISHING };
       
-    case 'CONFIGURED':
-      console.log(`✅ [${timestamp}] STATE -> CONFIGURED (sequence: ${state.sequenceId})`);
+    case 'CONFIGURING':
+      console.log(`⚙️ [${timestamp}] STATE -> CONFIGURING (sequence: ${state.sequenceId})`);
+      return { ...state, state: ConnectionState.CONFIGURING };
+      
+    case 'READY':
+      console.log(`✅ [${timestamp}] STATE -> READY (sequence: ${state.sequenceId})`);
       return { 
         ...state, 
-        state: ConnectionState.CONFIGURED, 
+        state: ConnectionState.READY, 
         retryCount: 0,
         connectionQuality: 'good'
       };
@@ -134,10 +140,12 @@ export const useRealtimeVoice = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [connectionStable, setConnectionStable] = useState(false);
   
-  // Enhanced derived states
-  const isConnected = state.state === ConnectionState.CONFIGURED || state.state === ConnectionState.STARTED;
-  const isConnecting = state.state === ConnectionState.OPENING || state.state === ConnectionState.ESTABLISHING;
-  const isReadyToStart = state.state === ConnectionState.CONFIGURED;
+  // Enhanced derived states - CRITICAL FIX
+  const isConnected = state.state === ConnectionState.READY || state.state === ConnectionState.STARTED;
+  const isConnecting = state.state === ConnectionState.OPENING || 
+                      state.state === ConnectionState.ESTABLISHING || 
+                      state.state === ConnectionState.CONFIGURING;
+  const isReadyToStart = state.state === ConnectionState.READY;
   const isScenarioStarted = state.state === ConnectionState.STARTED;
   const hasError = state.state === ConnectionState.ERROR;
   
@@ -268,8 +276,8 @@ export const useRealtimeVoice = () => {
       return;
     }
 
-    if (state.state !== ConnectionState.CONFIGURED) {
-      console.error('❌ START_SCENARIO_ERROR: Not in CONFIGURED state', state.state);
+    if (state.state !== ConnectionState.READY) {
+      console.error('❌ START_SCENARIO_ERROR: Not in READY state', state.state);
       setConnectionError('Voice session not ready. Please wait for connection.');
       return;
     }
@@ -416,6 +424,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               logEvent('▷', 'CONNECTION_ESTABLISHED', 'OpenAI connection established');
               setConnectionError(null);
               setConnectionStable(true);
+              dispatch({ type: 'CONFIGURING' });
               break;
 
             case EVENTS.SESSION_CREATED:
@@ -423,8 +432,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               break;
 
             case EVENTS.SESSION_UPDATED:
-              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated and ready');
-              dispatch({ type: 'CONFIGURED' });
+              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated');
+              break;
+
+            case EVENTS.SESSION_READY:
+              logEvent('▷', 'SESSION_READY', 'Session is ready for scenario start');
+              dispatch({ type: 'READY' });
               setConnectionStable(true);
               break;
 
@@ -551,7 +564,6 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
   }, [logEvent, startHeartbeat, stopHeartbeat]);
 
-  // Enhanced retry mechanism with exponential backoff
   const scheduleReconnect = useCallback((reason: string) => {
     if (!shouldReconnectRef.current || state.retryCount >= maxRetries) return;
     
