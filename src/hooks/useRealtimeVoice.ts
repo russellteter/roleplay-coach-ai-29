@@ -410,7 +410,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         logEvent('▷', 'FALLBACK_CONFIGURED', 'Forcing CONFIGURED state after timeout');
         dispatch({ type: 'CONFIGURED' });
       }
-    }, 8000); // 8 second fallback
+    }, 5000); // 5 second fallback - reduced from 8 to speed up UX
   }, [state.state, logEvent]);
 
   const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {

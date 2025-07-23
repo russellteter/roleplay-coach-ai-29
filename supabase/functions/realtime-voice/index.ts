@@ -203,9 +203,9 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
             socket.send(event.data);
             console.log(`📤 Forwarded to client: ${data.type}`);
 
-            // Handle session.update response from OpenAI - CRITICAL FIX
-            if (data.type === 'session.update' && sessionConfigured && !sessionUpdateSent) {
-              console.log("🎯 CRITICAL: Received session.update confirmation from OpenAI");
+            // Handle session.updated response from OpenAI - CRITICAL FIX
+            if (data.type === 'session.updated' && sessionConfigured && !sessionUpdateSent) {
+              console.log("🎯 CRITICAL: Received session.updated confirmation from OpenAI");
               console.log("🎯 Session configuration confirmed, sending session.updated to client");
               
               // Send the session.updated event that the client is waiting for
