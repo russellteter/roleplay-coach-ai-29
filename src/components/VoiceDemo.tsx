@@ -103,6 +103,8 @@ const VoiceDemo = () => {
   };
 
   const handleStartVoiceSession = async (scenario: Scenario) => {
+    console.log('🎯 User clicked Start Voice Session for:', scenario.title);
+    
     if (!audioPermissionGranted) {
       await requestAudioPermission();
       if (!audioPermissionGranted) return;
@@ -110,8 +112,10 @@ const VoiceDemo = () => {
 
     try {
       await connect(scenario);
+      console.log('🎯 Connection initiated, waiting for CONFIGURED state...');
       // Toast will be shown when connection reaches CONFIGURED state
     } catch (error) {
+      console.error('🎯 Connection failed:', error);
       toast({
         title: "Connection Failed",
         description: "We couldn't connect. Please refresh and try again, or check your audio settings.",
@@ -121,6 +125,7 @@ const VoiceDemo = () => {
   };
 
   const handleBeginRoleplay = async () => {
+    console.log('🎯 User clicked Begin Roleplay');
     try {
       await startScenario();
       toast({
@@ -254,15 +259,6 @@ const VoiceDemo = () => {
                     <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
                       {scenario.description}
                     </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center text-primary text-sm font-medium group-hover:text-primary/80 transition-colors">
-                        <Play className="w-4 h-4 mr-2" />
-                        <span>Start Voice Session</span>
-                      </div>
-                      <div className="text-xs bg-primary/10 text-primary px-3 py-1 rounded-full font-medium">
-                        Voice Practice
-                      </div>
-                    </div>
                     
                     <Button
                       onClick={() => handleStartVoiceSession(scenario)}
@@ -304,7 +300,7 @@ const VoiceDemo = () => {
             </div>
           )}
 
-          {/* Phase 3: Enhanced Error Display */}
+          {/* Enhanced Error Display */}
           {connectionError && (
             <Alert variant="destructive" className="mb-6">
               <AlertTriangle className="h-4 w-4" />

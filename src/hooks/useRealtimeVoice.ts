@@ -132,6 +132,7 @@ export const useRealtimeVoice = () => {
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const configuredTimeoutRef = useRef<NodeJS.Timeout | null>(null); // NEW: Fallback timeout
   const gainNodeRef = useRef<GainNode | null>(null);
   const scenarioRef = useRef<Scenario | null>(null);
   const shouldReconnectRef = useRef<boolean>(false);
@@ -397,6 +398,21 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
     }
   };
 
+  // NEW: Fallback timeout to force CONFIGURED state if session.updated doesn't arrive
+  const startConfiguredFallbackTimer = useCallback(() => {
+    if (configuredTimeoutRef.current) {
+      clearTimeout(configuredTimeoutRef.current);
+    }
+    
+    configuredTimeoutRef.current = setTimeout(() => {
+      console.warn('⚠️ FALLBACK: session.updated not received, forcing CONFIGURED state');
+      if (state.state === ConnectionState.OPENING) {
+        logEvent('▷', 'FALLBACK_CONFIGURED', 'Forcing CONFIGURED state after timeout');
+        dispatch({ type: 'CONFIGURED' });
+      }
+    }, 8000); // 8 second fallback
+  }, [state.state, logEvent]);
+
   const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {
     try {
       logEvent('▷', 'CONNECTION_START', 'Starting connection process');
@@ -447,6 +463,9 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         startHealthCheck();
+        
+        // Start fallback timer for CONFIGURED state
+        startConfiguredFallbackTimer();
       };
 
       wsRef.current.onmessage = async (event) => {
@@ -468,6 +487,13 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
             case EVENTS.SESSION_UPDATED:
               logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY TO START SCENARIO');
               console.debug('🎯 TRIGGERING CONFIGURED STATE');
+              
+              // Clear the fallback timer since we got the real event
+              if (configuredTimeoutRef.current) {
+                clearTimeout(configuredTimeoutRef.current);
+                configuredTimeoutRef.current = null;
+              }
+              
               dispatch({ type: 'CONFIGURED' });
               break;
 
@@ -590,6 +616,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
           connectionTimeoutRef.current = null;
         }
         
+        // Clear fallback timer
+        if (configuredTimeoutRef.current) {
+          clearTimeout(configuredTimeoutRef.current);
+          configuredTimeoutRef.current = null;
+        }
+        
         stopHealthCheck();
         dispatch({ type: 'CLOSED' });
         setIsRecording(false);
@@ -635,7 +667,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       dispatch({ type: 'CLOSED' });
       handleRetry();
     }
-  }, [state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect]);
+  }, [state.sequenceId, logEvent, startHealthCheck, stopHealthCheck, scheduleReconnect, startConfiguredFallbackTimer]);
 
   const handleRetry = useCallback(() => {
     if (state.retryCount < maxRetries) {
@@ -744,6 +776,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       if (connectionTimeoutRef.current) {
         clearTimeout(connectionTimeoutRef.current);
         connectionTimeoutRef.current = null;
+      }
+      
+      if (configuredTimeoutRef.current) {
+        clearTimeout(configuredTimeoutRef.current);
+        configuredTimeoutRef.current = null;
       }
       
       stopHealthCheck();
