@@ -89,6 +89,10 @@ export interface PongEvent {
   type: 'pong';
 }
 
+export interface HeartbeatEvent {
+  type: 'heartbeat';
+}
+
 export type OpenAIWebSocketEvent =
   | ConnectionEstablished
   | SessionCreate
@@ -104,4 +108,5 @@ export type OpenAIWebSocketEvent =
   | ResponseCreated
   | ErrorEvent
   | ConnectionClosed
-  | PongEvent;
+  | PongEvent
+  | HeartbeatEvent;

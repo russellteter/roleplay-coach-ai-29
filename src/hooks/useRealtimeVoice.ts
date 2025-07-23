@@ -426,8 +426,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated');
               break;
 
-            case EVENTS.SESSION_CONFIGURED:
-              logEvent('▷', 'SESSION_CONFIGURED', 'Session ready for scenario start');
+            case EVENTS.SESSION_UPDATED:
+              logEvent('▷', 'SESSION_UPDATED', 'Session configured and ready');
               dispatch({ type: 'CONFIGURED' });
               setConnectionStable(true);
               break;
