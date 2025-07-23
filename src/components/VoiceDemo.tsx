@@ -183,106 +183,136 @@ const VoiceDemo = () => {
   };
 
   return (
-    <div className="w-full space-y-8">
-      {/* Header Section */}
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold text-foreground">
-          Practice the Conversations That Matter Most — Live with AI
-        </h1>
-        <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-          Speak directly with Sharpen, your voice-based AI role-play coach. Choose a scenario and start talking — it talks back.
-        </p>
-      </div>
-
-      {/* Enhanced Use Case Toggle */}
-      <div className="flex justify-center">
-        <div className="inline-flex bg-muted rounded-xl p-2 gap-2">
-          {Object.entries(useCaseLabels).map(([key, label]) => {
-            const IconComponent = useCaseIcons[key as UseCase];
-            const isSelected = selectedUseCase === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setSelectedUseCase(key as UseCase)}
-                className={`px-6 py-3 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                  isSelected
-                    ? useCaseColors[key as UseCase] + ' shadow-lg transform scale-105'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-background/50 hover:shadow-md'
-                }`}
-              >
-                <IconComponent className="w-4 h-4" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Use Case Description */}
-      <div className="text-center">
-        <p className="text-muted-foreground max-w-2xl mx-auto">
-          {useCaseDescriptions[selectedUseCase]}
-        </p>
-      </div>
-
-      {/* Error Display for Scenarios */}
-      {scenariosError && (
-        <Card className="p-6 max-w-4xl mx-auto bg-red-50 border-red-200">
-          <div className="text-center text-red-600">
-            <p className="font-medium">Failed to load scenarios</p>
-            <p className="text-sm mt-1">{scenariosError}</p>
+    <div className="min-h-screen bg-gradient-primary">
+      <div className="w-full space-y-12 py-16 px-4">
+        {/* Header Section - Vocalize.ai Branding */}
+        <div className="text-center space-y-6">
+          <div className="space-y-2">
+            <h1 className="text-6xl font-bold text-foreground font-inter tracking-tight">
+              AI Voice Coaching Platform
+            </h1>
+            <p className="text-xl text-foreground/90 font-medium">
+              Revolutionizing critical conversation training
+            </p>
           </div>
-        </Card>
-      )}
 
-      {/* Scenario Selection */}
-      {!currentScenario && (
-        <div className="space-y-6">
-          <h3 className="text-xl font-semibold text-center">Choose Your Practice Scenario</h3>
           
-          {scenariosLoading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
-              <p className="text-muted-foreground mt-2">Loading scenarios...</p>
+          {/* Central Icon Set */}
+          <div className="flex items-center justify-center space-x-8 py-8">
+            <div className="w-16 h-16 bg-background-secondary rounded-2xl flex items-center justify-center shadow-glow">
+              <Mic className="w-8 h-8 text-foreground" />
             </div>
-          ) : filteredScenarios.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-              {filteredScenarios.map((scenario) => (
-                <Card
-                  key={scenario.id}
-                  className="p-6 hover:shadow-xl transition-all duration-300 hover:border-primary/50 group rounded-xl border-2 hover:scale-[1.02] bg-gradient-to-br from-background to-muted/20"
-                >
-                  <div className="space-y-4">
-                    <h4 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
-                      {scenario.title}
-                    </h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                      {scenario.description}
-                    </p>
-                    
-                    <Button
-                      onClick={() => handleStartVoiceSession(scenario)}
-                      disabled={isConnecting}
-                      className="w-full bg-primary hover:bg-primary/90 text-white"
-                    >
-                      {isConnecting ? 'Connecting...' : 'Start Voice Session'}
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+            <div className="text-foreground/60 text-2xl">→</div>
+            <div className="w-16 h-16 bg-background-secondary rounded-2xl flex items-center justify-center shadow-glow">
+              <Users className="w-8 h-8 text-foreground" />
             </div>
-          ) : (
-            <Card className="p-8 max-w-2xl mx-auto text-center bg-yellow-50 border-yellow-200">
-              <p className="text-yellow-800 font-medium">No scenarios available for {useCaseLabels[selectedUseCase]}</p>
-              <p className="text-yellow-600 text-sm mt-1">Please try a different use case or contact support.</p>
-            </Card>
-          )}
+            <div className="text-foreground/60 text-2xl">=</div>
+            <div className="w-16 h-16 bg-background-secondary rounded-2xl flex items-center justify-center shadow-glow">
+              <Heart className="w-8 h-8 text-foreground" />
+            </div>
+          </div>
+          
+          <p className="text-lg text-foreground/80 max-w-4xl mx-auto leading-relaxed">
+            AI-powered voice simulation for customer service, healthcare, and compliance training that drives measurable outcomes
+          </p>
         </div>
-      )}
 
-      {/* Active Voice Demo */}
-      {(isConnected || isConnecting || currentScenario) && (
-        <Card className="p-8 max-w-4xl mx-auto rounded-xl shadow-lg">
+        {/* Enhanced Use Case Toggle */}
+        <div className="flex justify-center">
+          <div className="inline-flex bg-background-secondary/50 backdrop-blur-sm rounded-2xl p-2 gap-2 shadow-elegant border border-border/20">
+            {Object.entries(useCaseLabels).map(([key, label]) => {
+              const IconComponent = useCaseIcons[key as UseCase];
+              const isSelected = selectedUseCase === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSelectedUseCase(key as UseCase)}
+                  className={`px-6 py-4 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center gap-3 ${
+                    isSelected
+                      ? 'bg-primary text-primary-foreground shadow-glow transform scale-105'
+                      : 'text-foreground/70 hover:text-foreground hover:bg-background-secondary/50 hover:shadow-md'
+                  }`}
+                >
+                  <IconComponent className="w-5 h-5" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Use Case Description */}
+        <div className="text-center">
+          <p className="text-foreground/80 max-w-2xl mx-auto text-lg">
+            {useCaseDescriptions[selectedUseCase]}
+          </p>
+        </div>
+
+        {/* Error Display for Scenarios */}
+        {scenariosError && (
+          <Card className="p-6 max-w-4xl mx-auto bg-destructive/10 border-destructive/20 backdrop-blur-sm">
+            <div className="text-center text-destructive-foreground">
+              <p className="font-semibold">Failed to load scenarios</p>
+              <p className="text-sm mt-1 opacity-80">{scenariosError}</p>
+            </div>
+          </Card>
+        )}
+
+        {/* Scenario Selection */}
+        {!currentScenario && (
+          <div className="space-y-8">
+            <h3 className="text-2xl font-bold text-center text-foreground font-inter">Choose Your Practice Scenario</h3>
+            
+            {scenariosLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin w-12 h-12 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
+                <p className="text-foreground/70 mt-4 text-lg">Loading scenarios...</p>
+              </div>
+            ) : filteredScenarios.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+                {filteredScenarios.map((scenario) => (
+                  <Card
+                    key={scenario.id}
+                    className="p-8 hover:shadow-glow transition-all duration-500 hover:border-primary/50 group rounded-2xl border-2 border-border/20 hover:scale-[1.02] bg-background-secondary/30 backdrop-blur-sm"
+                  >
+                    <div className="space-y-6">
+                      <h4 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors font-inter">
+                        {scenario.title}
+                      </h4>
+                      <p className="text-foreground/70 leading-relaxed line-clamp-3">
+                        {scenario.description}
+                      </p>
+                      
+                      <Button
+                        onClick={() => handleStartVoiceSession(scenario)}
+                        disabled={isConnecting}
+                        className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold py-3 rounded-xl shadow-glow hover:shadow-elegant transition-all duration-300"
+                      >
+                        {isConnecting ? (
+                          <div className="flex items-center gap-2">
+                            <div className="animate-spin w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full"></div>
+                            Connecting...
+                          </div>
+                        ) : (
+                          'Start Voice Session'
+                        )}
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="p-10 max-w-3xl mx-auto text-center bg-background-secondary/30 border-border/20 backdrop-blur-sm rounded-2xl">
+                <p className="text-foreground font-semibold text-lg">No scenarios available for {useCaseLabels[selectedUseCase]}</p>
+                <p className="text-foreground/60 text-sm mt-2">Please try a different use case or contact support.</p>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* Active Voice Demo */}
+        {(isConnected || isConnecting || currentScenario) && (
+          <Card className="p-10 max-w-5xl mx-auto rounded-2xl shadow-glow bg-background-secondary/30 backdrop-blur-sm border border-border/20">
           {/* Scenario Info */}
           {currentScenario && (
             <div className="text-center mb-6 pb-6 border-b">
@@ -463,28 +493,32 @@ const VoiceDemo = () => {
             </div>
           )}
         </Card>
-      )}
+        )}
 
-      {/* Enhanced Audio Permission Request */}
+        {/* Enhanced Audio Permission Request */}
       {!audioPermissionGranted && !isConnected && !currentScenario && (
-        <Card className="p-8 max-w-2xl mx-auto text-center rounded-xl border-2 border-primary/20 bg-gradient-to-br from-background to-primary/5">
-          <div className="space-y-6">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-              <Mic className="w-10 h-10 text-primary" />
+        <Card className="p-12 max-w-3xl mx-auto text-center rounded-2xl border-2 border-primary/20 bg-background-secondary/30 backdrop-blur-sm shadow-glow">
+          <div className="space-y-8">
+            <div className="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto shadow-glow">
+              <Mic className="w-12 h-12 text-primary" />
             </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold">Enable Voice Features</h3>
-              <p className="text-muted-foreground">
-                Sharpen needs microphone access to provide voice-based roleplay training.
+            <div className="space-y-3">
+              <h3 className="text-2xl font-bold text-foreground font-inter">Enable Voice Features</h3>
+              <p className="text-foreground/80 text-lg">
+                Vocalize.ai needs microphone access to provide voice-based roleplay training.
               </p>
             </div>
-            <Button onClick={requestAudioPermission} className="bg-primary hover:bg-primary/90 px-8 py-3 shadow-md hover:shadow-lg transition-all">
-              <Mic className="w-4 h-4 mr-2" />
+            <Button 
+              onClick={requestAudioPermission} 
+              className="bg-primary hover:bg-primary/90 px-10 py-4 text-lg font-semibold shadow-glow hover:shadow-elegant transition-all duration-300 rounded-xl"
+            >
+              <Mic className="w-5 h-5 mr-3" />
               Enable Microphone
             </Button>
           </div>
         </Card>
       )}
+      </div>
     </div>
   );
 };

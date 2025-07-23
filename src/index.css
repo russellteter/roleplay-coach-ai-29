@@ -1,103 +1,52 @@
-
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Bold Modern Design System for Sharpen */
-
 @layer base {
   :root {
-/* Sharpen - Modern Sleek Design System */
-    --background: 0 0% 100%; /* Pure white */
-    --foreground: 240 10% 3.9%; /* Rich dark gray */
-
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-
-    /* Primary - Vibrant Blue */
-    --primary: 216 100% 50%; /* #0066FF - Vibrant Blue for CTAs */
-    --primary-foreground: 0 0% 98%;
-    --primary-glow: 216 100% 70%;
-
-    /* Secondary - Sophisticated Gray */
-    --secondary: 210 40% 98%; /* #F7F7F7 - Light Gray */
-    --secondary-foreground: 240 10% 3.9%;
-
-    /* Muted tones */
-    --muted: 210 40% 98%; /* #F7F7F7 */
-    --muted-foreground: 240 3.8% 46.1%;
-
-    /* Accent - Warm Orange */
-    --accent: 24 100% 50%; /* #FF6600 - Warm Orange for highlights */
-    --accent-foreground: 0 0% 98%;
-    --accent-glow: 24 100% 70%;
-
+    /* Vocalize.ai Brand Colors */
+    --background: 218 58% 8%;          /* Deep navy blue #0A0F26 */
+    --background-secondary: 218 48% 12%; /* Slightly lighter navy #141B38 */
+    --foreground: 0 0% 100%;            /* Pure white #FFFFFF */
+    
+    --card: 218 58% 8%;
+    --card-foreground: 0 0% 100%;
+    
+    --popover: 218 58% 8%;
+    --popover-foreground: 0 0% 100%;
+    
+    --primary: 237 84% 64%;             /* Lavender accent #646CFF */
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 218 48% 15%;           /* Darker navy for secondary elements */
+    --secondary-foreground: 0 0% 100%;
+    
+    --muted: 218 48% 12%;
+    --muted-foreground: 0 0% 75%;
+    
+    --accent: 237 84% 64%;              /* Lavender accent */
+    --accent-foreground: 0 0% 100%;
+    
     --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 24 74% 58%;
-
-    /* Design system variables */
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 218 48% 20%;
+    --input: 218 48% 15%;
+    --ring: 237 84% 64%;
+    
     --radius: 0.75rem;
     
-    /* Modern gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
-    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-glow)));
-    --gradient-hero: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 50%, hsl(240 100% 97%) 100%);
-    --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
+    /* Vocalize.ai Brand Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(218, 58%, 8%), hsl(218, 48%, 12%));
+    --gradient-accent: linear-gradient(135deg, hsl(237, 84%, 64%), hsl(237, 74%, 54%));
     
-    /* Refined shadows */
-    --shadow-elegant: 0 25px 50px -12px hsl(var(--primary) / 0.25);
-    --shadow-glow: 0 8px 30px hsl(var(--accent) / 0.12);
-    --shadow-card: 0 4px 6px -1px hsl(240 10% 3.9% / 0.1), 0 2px 4px -1px hsl(240 10% 3.9% / 0.06);
+    /* Professional spacing and shadows */
+    --shadow-elegant: 0 10px 30px -10px hsl(237 84% 64% / 0.3);
+    --shadow-glow: 0 0 40px hsl(237 84% 64% / 0.2);
     
-    /* Smooth animations */
+    /* Smooth transitions */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-
-    --primary: 221 83% 53%;
-    --primary-foreground: 240 10% 3.9%;
-
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-
-    --accent: 160 84% 39%;
-    --accent-foreground: 240 10% 3.9%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 248 250 252;
-
-    --border: 30 41% 25%;
-    --input: 30 41% 25%;
-    --ring: 24 74% 58%;
   }
 }
 
@@ -107,23 +56,42 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-size: 18px;
-    line-height: 1.5;
+    @apply bg-background text-foreground font-inter antialiased;
+    font-size: 16px;
+    line-height: 1.6;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-size: 32px;
+    @apply font-inter font-bold;
+  }
+
+  .text-6xl {
+    font-size: 3.75rem;
+    line-height: 1;
+    font-weight: 800;
+  }
+
+  .text-2xl {
+    font-size: 1.5rem;
+    line-height: 1.3;
+    font-weight: 700;
   }
 
   .text-xl {
-    font-size: 18px;
+    font-size: 1.25rem;
+    line-height: 1.4;
+    font-weight: 600;
+  }
+
+  .text-lg {
+    font-size: 1.125rem;
     line-height: 1.5;
+    font-weight: 500;
   }
 }
 
 @layer components {
-  /* Section spacing */
+  /* Professional spacing */
   .section-padding {
     padding: 80px 0;
   }
@@ -134,110 +102,51 @@
     }
   }
   
-  /* Hero gradient background */
-  .hero-gradient {
-    background: var(--gradient-hero);
+  /* Vocalize.ai specific components */
+  .bg-background-secondary {
+    background-color: hsl(var(--background-secondary));
   }
   
-  /* Card with bold shadow */
-  .card-elegant {
-    box-shadow: var(--shadow-card);
-    transition: var(--transition-smooth);
+  /* Enhanced glassmorphism effects */
+  .backdrop-blur-sm {
+    backdrop-filter: blur(8px);
   }
   
-  .card-elegant:hover {
+  /* Professional shadows */
+  .shadow-elegant {
     box-shadow: var(--shadow-elegant);
-    transform: translateY(-4px);
   }
   
-  /* Glow effect for CTAs */
-  .glow-accent {
+  .shadow-glow {
     box-shadow: var(--shadow-glow);
   }
   
-  /* Animated underline for links */
-  .link-animated {
-    @apply relative inline-block;
-  }
-  
-  .link-animated::after {
-    content: '';
-    @apply absolute w-full scale-x-0 h-0.5 bottom-0 left-0 bg-primary origin-bottom-right;
-    transition: var(--transition-smooth);
-  }
-  
-  .link-animated:hover::after {
-    @apply scale-x-100 origin-bottom-left;
-  }
-  
-  /* Bold scale animation */
+  /* Smooth scale animations */
   .hover-scale {
     transition: var(--transition-smooth);
   }
   
   .hover-scale:hover {
-    transform: scale(1.08);
+    transform: scale(1.02);
   }
   
-  /* Voice pulse animation */
-  .pulse-voice {
-    animation: pulse-voice 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-  
-  @keyframes pulse-voice {
-    0%, 100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.8;
-      transform: scale(1.15);
-    }
-  }
-  
-  /* Fade in animation */
-  .fade-in {
-    animation: fade-in 0.8s ease-out forwards;
-  }
-  
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(30px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  /* Enhanced waveform animation */
-  .waveform {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-  }
-  
-  .waveform-bar {
-    width: 4px;
+  /* Professional gradient backgrounds */
+  .bg-gradient-primary {
     background: var(--gradient-primary);
-    border-radius: 3px;
-    animation: waveform 1.2s ease-in-out infinite;
   }
   
-  .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
-  .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
-  .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
-  .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
-  .waveform-bar:nth-child(6) { animation-delay: 0.5s; }
-  .waveform-bar:nth-child(7) { animation-delay: 0.6s; }
+  /* Inter font utilities */
+  .font-inter {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
   
-  @keyframes waveform {
-    0%, 100% {
-      height: 6px;
-    }
-    50% {
-      height: 24px;
-    }
+  /* Modern rounded corners */
+  .rounded-2xl {
+    border-radius: 1rem;
+  }
+  
+  /* Enhanced focus states */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
   }
 }
