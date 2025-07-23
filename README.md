@@ -77,11 +77,9 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-trick
 
 ## Environment Variables
 
-Create a `.env` file in the project root with the following variables:
+Create a `.env` file in the project root and provide the following variables. They are used to configure the Supabase client at build time:
 
 ```bash
 SUPABASE_URL=<your supabase url>
 SUPABASE_PUBLISHABLE_KEY=<your supabase anon key>
 ```
-
-These values are required for the Supabase client configuration.
