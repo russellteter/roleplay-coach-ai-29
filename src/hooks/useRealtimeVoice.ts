@@ -1,4 +1,3 @@
-
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { v4 as generateUuid } from 'uuid';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
@@ -13,8 +12,8 @@ import type {
 // Phase 1: Event Standardization - CORRECTED MAPPINGS
 const EVENTS = {
   CONNECTION_ESTABLISHED: 'connection.established',
-  SESSION_CREATED: 'session.create',     // ⚡️ must match server
-  SESSION_UPDATED: 'session.update',     // ⚡️ must match server
+  SESSION_CREATED: 'session.created',     // ⚡️ must match server
+  SESSION_UPDATED: 'session.updated',     // ⚡️ must match server
   AUDIO_DELTA: 'response.audio.delta',
   AUDIO_DONE: 'response.audio.done',
   AUDIO_TRANSCRIPT_DELTA: 'response.audio_transcript.delta',
@@ -465,6 +464,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
             case EVENTS.SESSION_UPDATED:
               logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated - READY TO START SCENARIO');
+              console.debug('🎯 TRIGGERING CONFIGURED STATE');
               dispatch({ type: 'CONFIGURED' });
               break;
 

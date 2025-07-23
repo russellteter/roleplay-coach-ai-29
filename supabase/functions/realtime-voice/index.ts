@@ -85,6 +85,7 @@ serve(async (req) => {
     
     let openAISocket: WebSocket | null = null;
     let isConnected = false;
+    let sessionConfigured = false;
     let idleTimer: number | null = null;
     const IDLE_TIMEOUT_MS = 60_000; // close connection if idle for 60s
 
@@ -112,6 +113,7 @@ serve(async (req) => {
       }
       openAISocket = null;
       isConnected = false;
+      sessionConfigured = false;
     };
 
     socket.onopen = async () => {
@@ -147,13 +149,9 @@ serve(async (req) => {
             const data = JSON.parse(event.data);
             console.log(`📨 OpenAI -> Client: ${data.type}`);
 
-            // Forward all OpenAI messages to client after validation
-            socket.send(event.data);
-            console.log("📤 Forwarded to client:", data.type);
-
             // Handle session.create to send our optimized configuration
             if (data.type === 'session.create') {
-              console.log("⚙️ Configuring OpenAI session for roleplay scenarios");
+              console.log("⚙️ Received session.create, sending session configuration");
               
               const sessionConfig: SessionUpdateEvent = {
                 type: 'session.update',
@@ -196,7 +194,31 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
               console.log("📤 Sending session configuration to OpenAI");
               openAISocket.send(JSON.stringify(sessionConfig));
+              sessionConfigured = true;
             }
+
+            // Forward the session.create event to client first
+            socket.send(event.data);
+            console.log("📤 Forwarded to client:", data.type);
+
+            // After forwarding session.create, send the session.updated event
+            if (data.type === 'session.create' && sessionConfigured) {
+              console.log("🎯 Sending session.updated event to client");
+              socket.send(JSON.stringify({
+                type: 'session.updated',
+                session: {} // Empty session object since config was already sent
+              }));
+            }
+
+            // Handle session.update response from OpenAI
+            if (data.type === 'session.update') {
+              console.log("🎯 Received session.update from OpenAI, forwarding as session.updated");
+              socket.send(JSON.stringify({
+                type: 'session.updated',
+                session: data.session || {}
+              }));
+            }
+
             resetIdleTimer();
             
           } catch (error) {
