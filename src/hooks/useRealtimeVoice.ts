@@ -292,7 +292,7 @@ export const useRealtimeVoice = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.supabaseKey}`
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpcmJrenRsYml4dmFjZWtoenl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjE2MzQ1MzQsImV4cCI6MjAzNzIxMDUzNH0.GmIYDhjQF9vAJN5u9uLajHgUqCNKDWIqp__h2I5N2U0`
         },
         body: JSON.stringify({ action: 'connect' }),
         signal: abortControllerRef.current.signal
@@ -498,30 +498,26 @@ export const useRealtimeVoice = () => {
   }, [state.state, logEvent]);
 
   const startAudioCapture = useCallback(async (): Promise<void> => {
-    if (!audioContextRef.current) {
-      await initializeAudioContext();
-    } else if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
-    
-    recorderRef.current = new AudioRecorder((audioData) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        const encodedAudio = encodeAudioForAPI(audioData);
-        wsRef.current.send(JSON.stringify({
-          type: 'input_audio_buffer.append',
-          audio: encodedAudio
-        }));
+    try {
+      if (!audioContextRef.current) {
+        await initializeAudioContext();
+      } else if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
       }
-    });
+      
+      recorderRef.current = new AudioRecorder((audioData) => {
+        // Audio capture logic - will be used for sending to streaming endpoint
+        logEvent('▷', 'AUDIO_DATA_CAPTURED', `${audioData.length} samples`);
+      });
 
-    await recorderRef.current.start();
-    setIsRecording(true);
-    logEvent('▷', 'AUDIO_CAPTURE_SUCCESS', 'Audio capture started successfully');
-  } catch (error) {
-    logEvent('▷', 'AUDIO_CAPTURE_ERROR', error);
-    throw error;
-  }
-}, [logEvent]);
+      await recorderRef.current.start();
+      setIsRecording(true);
+      logEvent('▷', 'AUDIO_CAPTURE_SUCCESS', 'Audio capture started successfully');
+    } catch (error) {
+      logEvent('▷', 'AUDIO_CAPTURE_ERROR', error);
+      throw error;
+    }
+  }, [logEvent]);
 
 const stopAudioCapture = useCallback(() => {
   if (recorderRef.current) {
@@ -538,29 +534,9 @@ const stopAudioCapture = useCallback(() => {
 }, [logEvent]);
 
 const sendTextMessage = useCallback((text: string) => {
-  if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-    logEvent('▷', 'TEXT_MESSAGE_ERROR', 'Cannot send text message - WebSocket not connected');
-    return;
-  }
-
-  logEvent('◁', 'TEXT_MESSAGE_SEND', `Sending text message: ${text}`);
-  const event: ClientWebSocketEvent = {
-    type: 'conversation.item.create',
-    item: {
-      type: 'message',
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text
-        }
-      ]
-    }
-  };
-
-  wsRef.current.send(JSON.stringify(event));
-  const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
-  wsRef.current.send(JSON.stringify(responseEvent));
+  // Text messages will be sent through the HTTP streaming endpoint
+  logEvent('▷', 'TEXT_MESSAGE_SEND', `Sending text message: ${text}`);
+  // TODO: Implement text message sending through HTTP streaming
 }, [logEvent]);
 
   const setVolume = useCallback((volume: number) => {
