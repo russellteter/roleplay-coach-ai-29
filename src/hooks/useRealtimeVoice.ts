@@ -207,63 +207,142 @@ export const useRealtimeVoice = () => {
     }
   };
 
-  // Enhanced health check with better error handling
-   const testEdgeFunctionHealth = async (): Promise<boolean> => {
-     try {
-       logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
-       const { data, error } = await supabase.functions.invoke('realtime-voice', {
-         body: { action: 'health' }
-       });
-       
-       console.log('🔍 Health check response:', { data, error });
-       
-       if (error) {
-         logEvent('▷', 'HEALTH_CHECK_ERROR', error);
-         setConnectionError(`Edge function error: ${error.message}`);
-         toast({
-           title: "❌ Connection Error", 
-           description: `Edge function error: ${error.message}`,
-           variant: "destructive"
-         });
-         return false;
-       }
-       
-       if (data && data.hasOpenAIKey) {
-         logEvent('▷', 'HEALTH_CHECK_SUCCESS', 'Edge function healthy');
-         connectionQualityRef.current = 'good';
-         return true;
-       }
-       
-       if (data && !data.hasOpenAIKey) {
-         setConnectionError('OpenAI API key not configured in Supabase Edge Functions.');
-         toast({
-           title: "❌ Missing API Key", 
-           description: "OpenAI API key not configured in Supabase Edge Functions.",
-           variant: "destructive"
-         });
-         return false;
-       }
-       
-       console.log('🔍 Unexpected health check response:', data);
-       setConnectionError('Unexpected health check response.');
-       toast({
-         title: "❌ Health Check Failed", 
-         description: "Unexpected response from health check.",
-         variant: "destructive"
-       });
-       return false;
-     } catch (error) {
-       logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
-       console.error('🔍 Health check exception:', error);
-       setConnectionError('Cannot reach edge function. Please check your connection.');
-       connectionQualityRef.current = 'poor';
-       toast({
-         title: "❌ Connection Failed", 
-         description: "Cannot reach edge function. Please check your connection.",
-         variant: "destructive"
-       });
-       return false;
-     }
+  // CRITICAL DEBUG: Enhanced health check with comprehensive logging
+  const testEdgeFunctionHealth = async (): Promise<boolean> => {
+    try {
+      logEvent('▷', 'HEALTH_CHECK_START', 'Testing edge function health');
+      console.log('🔍 [DEBUG] Starting health check...');
+      
+      const healthCheckStartTime = Date.now();
+      
+      // Make the actual call to Supabase Edge Function
+      console.log('🔍 [DEBUG] Calling supabase.functions.invoke...');
+      const result = await supabase.functions.invoke('realtime-voice', {
+        body: { action: 'health' }
+      });
+      
+      const healthCheckDuration = Date.now() - healthCheckStartTime;
+      console.log(`🔍 [DEBUG] Health check completed in ${healthCheckDuration}ms`);
+      
+      // Log the full response structure
+      console.log('🔍 [DEBUG] Full health check response:', {
+        data: result.data,
+        error: result.error,
+        status: result.status,
+        statusText: result.statusText
+      });
+      
+      // Check for Supabase client errors first
+      if (result.error) {
+        console.error('🔍 [DEBUG] Supabase client error:', result.error);
+        logEvent('▷', 'HEALTH_CHECK_SUPABASE_ERROR', result.error);
+        setConnectionError(`Supabase error: ${result.error.message}`);
+        toast({
+          title: "❌ Supabase Error", 
+          description: `Failed to reach edge function: ${result.error.message}`,
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      // Check the actual response data
+      const { data } = result;
+      
+      if (!data) {
+        console.error('🔍 [DEBUG] No data received from health check');
+        logEvent('▷', 'HEALTH_CHECK_NO_DATA', 'No data returned from health check');
+        setConnectionError('No response data from health check');
+        toast({
+          title: "❌ No Response", 
+          description: "Edge function returned no data",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      console.log('🔍 [DEBUG] Health check data structure:', {
+        hasOpenAIKey: data.hasOpenAIKey,
+        status: data.status,
+        message: data.message,
+        timestamp: data.timestamp
+      });
+      
+      // Check if the response indicates success
+      if (data.status === 'healthy' && data.hasOpenAIKey === true) {
+        console.log('🔍 [DEBUG] Health check SUCCESS - Edge function healthy with OpenAI key');
+        logEvent('▷', 'HEALTH_CHECK_SUCCESS', 'Edge function healthy with OpenAI key');
+        connectionQualityRef.current = 'good';
+        setConnectionError(null);
+        return true;
+      }
+      
+      // Check if OpenAI key is missing
+      if (data.hasOpenAIKey === false) {
+        console.error('🔍 [DEBUG] OpenAI API key missing in Edge Function');
+        logEvent('▷', 'HEALTH_CHECK_MISSING_KEY', 'OpenAI API key not configured');
+        setConnectionError('OpenAI API key not configured in Supabase Edge Functions.');
+        toast({
+          title: "❌ Missing API Key", 
+          description: "OpenAI API key not configured in Supabase Edge Functions. Please add OPENAI_API_KEY to your Supabase secrets.",
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      // Check for other error conditions
+      if (data.error) {
+        console.error('🔍 [DEBUG] Edge function returned error:', data.error);
+        logEvent('▷', 'HEALTH_CHECK_EDGE_ERROR', data.error);
+        setConnectionError(`Edge function error: ${data.error}`);
+        toast({
+          title: "❌ Edge Function Error", 
+          description: `Edge function error: ${data.error}`,
+          variant: "destructive"
+        });
+        return false;
+      }
+      
+      // Unexpected response structure
+      console.warn('🔍 [DEBUG] Unexpected health check response structure:', data);
+      logEvent('▷', 'HEALTH_CHECK_UNEXPECTED', 'Unexpected response structure');
+      setConnectionError('Unexpected health check response format.');
+      toast({
+        title: "❌ Health Check Failed", 
+        description: "Unexpected response from health check. Check console for details.",
+        variant: "destructive"
+      });
+      return false;
+      
+    } catch (error) {
+      console.error('🔍 [DEBUG] Health check exception:', error);
+      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
+      
+      // More detailed error information
+      if (error instanceof Error) {
+        console.error('🔍 [DEBUG] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+        setConnectionError(`Connection failed: ${error.message}`);
+        toast({
+          title: "❌ Connection Failed", 
+          description: `Cannot reach edge function: ${error.message}`,
+          variant: "destructive"
+        });
+      } else {
+        console.error('🔍 [DEBUG] Unknown error type:', typeof error, error);
+        setConnectionError('Unknown connection error occurred');
+        toast({
+          title: "❌ Connection Failed", 
+          description: "Unknown error occurred. Check console for details.",
+          variant: "destructive"
+        });
+      }
+      
+      connectionQualityRef.current = 'poor';
+      return false;
+    }
   };
 
   // Enhanced heartbeat mechanism
@@ -380,6 +459,8 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
   const connect = useCallback(async (scenario?: Scenario, skipDispatch = false) => {
     try {
       logEvent('▷', 'CONNECTION_START', 'Starting connection process');
+      console.log('🔍 [DEBUG] === CONNECTION START ===');
+      
       if (!skipDispatch) {
         dispatch({ type: 'OPENING' });
       }
@@ -403,12 +484,18 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         logEvent('▷', 'SCENARIO_SET', `Selected scenario: ${scenario.title}`);
       }
       
-      // Test edge function health first
+      // Test edge function health first - CRITICAL DEBUG POINT
+      console.log('🔍 [DEBUG] Testing edge function health...');
       const isHealthy = await testEdgeFunctionHealth();
+      console.log('🔍 [DEBUG] Health check result:', isHealthy);
+      
       if (!isHealthy) {
+        console.error('🔍 [DEBUG] Health check failed - aborting connection');
         dispatch({ type: 'ERROR', error: 'Edge function health check failed' });
         return;
       }
+      
+      console.log('🔍 [DEBUG] Health check passed - proceeding with connection');
       
       // Initialize audio system
       await initializeAudioContext();
@@ -585,6 +672,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       };
 
     } catch (error) {
+      console.error('🔍 [DEBUG] Connection error:', error);
       logEvent('▷', 'CONNECTION_ERROR', error);
       setConnectionError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       dispatch({ type: 'ERROR', error: 'Connection failed' });
