@@ -62,7 +62,17 @@ This project is built with:
 
 ## Running tests
 
-Use `npm test` to run the Node-based test harness. Set `WS_URL` if your realtime voice function runs on a different WebSocket URL.
+Use `npm test` to run the Node-based test harness. The realtime voice test now
+relies on Server-Sent Events (SSE). If `SSE_URL` is not provided, a mock SSE
+server is started automatically.
+
+To run the tests against your own Supabase function, first start your local
+Supabase stack (`supabase start`) and then set `SSE_URL` to the endpoint of the
+`realtime-voice` function:
+
+```bash
+SSE_URL=http://localhost:54321/functions/v1/realtime-voice npm test
+```
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/e1ebfc55-81a2-43ef-ae53-9a59858c4eec) and click on Share -> Publish.

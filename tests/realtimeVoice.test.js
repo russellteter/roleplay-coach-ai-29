@@ -1,49 +1,83 @@
-import test from "node:test"
+import test from 'node:test'
 import assert from 'node:assert'
-import {WebSocket} from 'ws'
+import { createServer } from 'node:http'
 
-const wsUrl = process.env.WS_URL || 'ws://localhost:8787'
+// Start a simple SSE mock server if the SSE_URL env var isn't provided.
+const startMockServer = () => new Promise(resolve => {
+  const server = createServer((req, res) => {
+    if (req.method === 'POST') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
 
-test('session.create -> session.update -> scenario start', async (t) => {
-  const events = []
-
-  await new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl)
-
-    ws.on('error', err => {
-      reject(err)
-    })
-
-    ws.on('open', () => {
-      // connection established
-    })
-
-    ws.on('message', msg => {
-      const data = JSON.parse(msg)
-      events.push(data.type)
-
-      if (data.type === 'session.update') {
-        // send minimal scenario start messages
-        ws.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {type: 'message', role: 'system', content: [{type: 'text', text: 'Start'}]}
-        }))
-        ws.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {type: 'message', role: 'user', content: [{type: 'text', text: 'Start'}]}
-        }))
-        ws.send(JSON.stringify({type: 'response.create'}))
-      }
-
-      if (data.type === 'response.created') {
-        ws.close()
-      }
-    })
-
-    ws.on('close', () => resolve())
+      // Send a minimal stream of events
+      res.write(`data: ${JSON.stringify({ type: 'session.created' })}\n\n`)
+      setTimeout(() => {
+        res.write(`data: ${JSON.stringify({ type: 'session.updated' })}\n\n`)
+        setTimeout(() => {
+          res.write(`data: ${JSON.stringify({ type: 'response.created' })}\n\n`)
+          res.end()
+        }, 10)
+      }, 10)
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
   })
 
-  assert.ok(events[0] === 'session.create', 'first event should be session.create')
-  assert.ok(events[1] === 'session.update', 'second event should be session.update')
+  server.listen(0, () => {
+    const { port } = server.address()
+    resolve({ server, url: `http://localhost:${port}` })
+  })
+})
+
+test('session.create -> session.update -> scenario start (SSE)', async () => {
+  let server
+  let url = process.env.SSE_URL
+
+  if (!url) {
+    const started = await startMockServer()
+    server = started.server
+    url = started.url
+  }
+
+  const events = []
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'connect' })
+  })
+
+  const reader = response.body?.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  if (!reader) throw new Error('No readable stream returned')
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6))
+        events.push(data.type)
+      }
+    }
+
+    if (events.includes('response.created')) break
+  }
+
+  server?.close()
+
+  assert.strictEqual(events[0], 'session.created', 'first event should be session.created')
+  assert.strictEqual(events[1], 'session.updated', 'second event should be session.updated')
   assert.ok(events.includes('response.created'), 'scenario should start')
 })
