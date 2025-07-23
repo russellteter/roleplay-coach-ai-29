@@ -1,5 +1,5 @@
-
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
+import { v4 as generateUuid } from 'uuid';
 import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAudio';
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
@@ -227,17 +227,30 @@ export const useRealtimeVoice = () => {
     });
   }, [state.sequenceId, logEvent]);
 
+  // ⚡️ SIMPLIFIED: sendScenarioOpening - remove complex async patterns
   const sendScenarioOpening = useCallback(async (scenario: Scenario) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      logEvent('▷', 'SCENARIO_OPENING_ERROR', 'WebSocket not connected');
+      console.error('❌ SENDING_SCENARIO_OPENING_ERROR: WebSocket not connected');
+      return;
+    }
+
+    if (!scenario.prompt) {
+      console.error('❌ SENDING_SCENARIO_OPENING_ERROR: No prompt found in scenario', scenario);
+      setConnectionError('Scenario prompt not found. Please try a different scenario.');
       return;
     }
 
     try {
-      logEvent('▷', 'SCENARIO_OPENING_START', `Starting scenario: ${scenario.title}`);
+      const requestId = generateUuid();
+      console.debug('▷ SENDING_SCENARIO_OPENING', { 
+        scenarioId: scenario.id, 
+        requestId, 
+        promptLength: scenario.prompt.length,
+        openingMessage: scenario.openingMessage 
+      });
       
-      // Step 1: Send system message with clear instructions
-      const systemEvent: ClientWebSocketEvent = {
+      // Step 1: Send system message with scenario prompt
+      const systemMessage: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
@@ -255,11 +268,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
       };
 
-      await sendAndAwaitResponse(systemEvent);
-      logEvent('▷', 'SCENARIO_SYSTEM_MESSAGE_SENT', 'System message sent');
+      wsRef.current.send(JSON.stringify(systemMessage));
+      console.debug('▷ SENT_SYSTEM_MESSAGE', { requestId, scenarioId: scenario.id });
 
       // Step 2: Send trigger message
-      const triggerEvent: ClientWebSocketEvent = {
+      const triggerMessage: ClientWebSocketEvent = {
         type: 'conversation.item.create',
         item: {
           type: 'message',
@@ -273,31 +286,31 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
         }
       };
 
-      await sendAndAwaitResponse(triggerEvent);
-      logEvent('▷', 'SCENARIO_TRIGGER_SENT', 'Trigger message sent');
+      wsRef.current.send(JSON.stringify(triggerMessage));
+      console.debug('▷ SENT_TRIGGER_MESSAGE', { requestId, scenarioId: scenario.id });
 
       // Step 3: Request response
-      const responseEvent: ClientWebSocketEvent = { type: 'response.create' };
-      await sendAndAwaitResponse(responseEvent, EVENTS.RESPONSE_CREATED);
-      logEvent('▷', 'SCENARIO_RESPONSE_REQUESTED', 'Response creation requested');
+      const responseRequest: ClientWebSocketEvent = { type: 'response.create' };
+      wsRef.current.send(JSON.stringify(responseRequest));
+      console.debug('▷ SENT_RESPONSE_REQUEST', { requestId, scenarioId: scenario.id });
 
       dispatch({ type: 'STARTED' });
       scenarioOpeningSentRef.current = true;
-      setShouldStartScenario(false); // Reset the flag
+      setShouldStartScenario(false);
       
     } catch (error) {
-      logEvent('▷', 'SCENARIO_OPENING_ERROR', error);
+      console.error('❌ SENDING_SCENARIO_OPENING_ERROR:', error);
       setConnectionError('Failed to start scenario. Please try again.');
     }
-  }, [sendAndAwaitResponse, logEvent]);
+  }, []);
 
   // Auto-start scenario when conditions are met
   useEffect(() => {
     if (shouldStartScenario && state.state === ConnectionState.CONFIGURED && scenarioRef.current && !scenarioOpeningSentRef.current) {
-      logEvent('▷', 'AUTO_START_SCENARIO_EFFECT', `Starting scenario: ${scenarioRef.current.title}`);
+      console.debug('▷ AUTO_START_SCENARIO_EFFECT', `Starting scenario: ${scenarioRef.current.title}`);
       sendScenarioOpening(scenarioRef.current);
     }
-  }, [shouldStartScenario, state.state, sendScenarioOpening, logEvent]);
+  }, [shouldStartScenario, state.state, sendScenarioOpening]);
 
   const startHealthCheck = useCallback(() => {
     if (healthCheckRef.current) {
@@ -397,7 +410,12 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
       if (scenario) {
         setCurrentScenario(scenario);
         scenarioRef.current = scenario;
-        logEvent('▷', 'SCENARIO_SET', `Selected scenario: ${scenario.title}`);
+        console.debug('▷ SCENARIO_SET', `Selected scenario: ${scenario.title}`, {
+          id: scenario.id,
+          hasPrompt: !!scenario.prompt,
+          promptLength: scenario.prompt?.length || 0,
+          openingMessage: scenario.openingMessage
+        });
       }
       
       // Test edge function health first
@@ -447,7 +465,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               
               // Set flag to start scenario instead of calling it directly
               if (scenarioRef.current && !scenarioOpeningSentRef.current) {
-                logEvent('▷', 'TRIGGER_SCENARIO_START', `Triggering scenario start: ${scenarioRef.current.title}`);
+                console.debug('▷ TRIGGER_SCENARIO_START', `Triggering scenario start: ${scenarioRef.current.title}`);
                 setShouldStartScenario(true);
               }
               break;
@@ -472,6 +490,11 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
             case EVENTS.AUDIO_DELTA:
               if (data.delta && audioQueueRef.current && audioContextRef.current) {
                 try {
+                  // ⚡️ FIRST AUDIO CHUNK LOGGING
+                  if (!isAISpeaking) {
+                    console.debug('▷ RECEIVED_FIRST_AUDIO_CHUNK', data.delta.length, 'bytes');
+                  }
+                  
                   // Ensure audio context is running
                   if (audioContextRef.current.state === 'suspended') {
                     await audioContextRef.current.resume();
@@ -493,6 +516,10 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
 
             case EVENTS.AUDIO_TRANSCRIPT_DELTA:
               if (data.delta) {
+                // ⚡️ FIRST CHAT TOKEN LOGGING
+                if (!aiResponse) {
+                  console.debug('▷ RECEIVED_FIRST_CHAT_TOKEN', data.delta);
+                }
                 setAiResponse(prev => prev + data.delta);
               }
               break;

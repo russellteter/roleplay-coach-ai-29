@@ -30,15 +30,22 @@ export const useScenarioPrompts = () => {
         // Map the data to ensure consistent field naming and handle both category naming conventions
         const mappedScenarios = data?.map((scenario: any) => ({
           ...scenario,
+          prompt: scenario.prompt || scenario.prompt_text, // ⚡️ Fix: map prompt_text to prompt
           openingMessage: scenario.opening_message || scenario.openingMessage,
           // Normalize categories to match frontend expectations
           category: scenario.category === 'customer-service' ? 'customer-support' : scenario.category
         })) || [];
 
-        console.log('Fetched scenarios:', mappedScenarios);
+        console.log('✅ Fetched scenarios with prompts:', mappedScenarios.map(s => ({
+          id: s.id,
+          title: s.title,
+          hasPrompt: !!s.prompt,
+          promptLength: s.prompt?.length || 0
+        })));
+        
         setScenarios(mappedScenarios);
       } catch (err) {
-        console.error('Error fetching scenarios:', err);
+        console.error('❌ Error fetching scenarios:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch scenarios');
       } finally {
         setLoading(false);
