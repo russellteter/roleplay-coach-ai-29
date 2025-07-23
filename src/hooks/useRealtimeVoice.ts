@@ -4,6 +4,7 @@ import { AudioRecorder, encodeAudioForAPI, AudioQueue } from '@/utils/RealtimeAu
 import { audioDebugger } from '@/utils/AudioDebugger';
 import { Scenario } from '@/utils/scenarioPrompts';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/components/ui/use-toast';
 import type {
   ClientWebSocketEvent,
   OpenAIWebSocketEvent,
@@ -130,6 +131,7 @@ function connectionReducer(state: ConnectionStateContext, action: StateAction): 
 }
 
 export const useRealtimeVoice = () => {
+  const { toast } = useToast();
   const [state, dispatch] = useReducer(connectionReducer, initialState);
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
@@ -206,37 +208,62 @@ export const useRealtimeVoice = () => {
   };
 
   // Enhanced health check with better error handling
-  const testEdgeFunctionHealth = async (): Promise<boolean> => {
-    try {
-      logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
-      const { data, error } = await supabase.functions.invoke('realtime-voice', {
-        body: { action: 'health' }
-      });
-      
-      if (error) {
-        logEvent('▷', 'HEALTH_CHECK_ERROR', error);
-        setConnectionError(`Edge function error: ${error.message}`);
-        return false;
-      }
-      
-      if (data && data.hasOpenAIKey) {
-        logEvent('▷', 'HEALTH_CHECK_SUCCESS', 'Edge function healthy');
-        connectionQualityRef.current = 'good';
-        return true;
-      }
-      
-      if (data && !data.hasOpenAIKey) {
-        setConnectionError('OpenAI API key not configured in Supabase Edge Functions.');
-        return false;
-      }
-      
-      return false;
-    } catch (error) {
-      logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
-      setConnectionError('Cannot reach edge function. Please check your connection.');
-      connectionQualityRef.current = 'poor';
-      return false;
-    }
+   const testEdgeFunctionHealth = async (): Promise<boolean> => {
+     try {
+       logEvent('▷', 'HEALTH_CHECK', 'Testing edge function health');
+       const { data, error } = await supabase.functions.invoke('realtime-voice', {
+         body: { action: 'health' }
+       });
+       
+       console.log('🔍 Health check response:', { data, error });
+       
+       if (error) {
+         logEvent('▷', 'HEALTH_CHECK_ERROR', error);
+         setConnectionError(`Edge function error: ${error.message}`);
+         toast({
+           title: "❌ Connection Error", 
+           description: `Edge function error: ${error.message}`,
+           variant: "destructive"
+         });
+         return false;
+       }
+       
+       if (data && data.hasOpenAIKey) {
+         logEvent('▷', 'HEALTH_CHECK_SUCCESS', 'Edge function healthy');
+         connectionQualityRef.current = 'good';
+         return true;
+       }
+       
+       if (data && !data.hasOpenAIKey) {
+         setConnectionError('OpenAI API key not configured in Supabase Edge Functions.');
+         toast({
+           title: "❌ Missing API Key", 
+           description: "OpenAI API key not configured in Supabase Edge Functions.",
+           variant: "destructive"
+         });
+         return false;
+       }
+       
+       console.log('🔍 Unexpected health check response:', data);
+       setConnectionError('Unexpected health check response.');
+       toast({
+         title: "❌ Health Check Failed", 
+         description: "Unexpected response from health check.",
+         variant: "destructive"
+       });
+       return false;
+     } catch (error) {
+       logEvent('▷', 'HEALTH_CHECK_EXCEPTION', error);
+       console.error('🔍 Health check exception:', error);
+       setConnectionError('Cannot reach edge function. Please check your connection.');
+       connectionQualityRef.current = 'poor';
+       toast({
+         title: "❌ Connection Failed", 
+         description: "Cannot reach edge function. Please check your connection.",
+         variant: "destructive"
+       });
+       return false;
+     }
   };
 
   // Enhanced heartbeat mechanism
