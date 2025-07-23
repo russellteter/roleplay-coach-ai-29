@@ -288,15 +288,19 @@ export const useRealtimeVoice = () => {
       // Start HTTP streaming connection
       abortControllerRef.current = new AbortController();
       
-      const response = await fetch(`https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpcmJrenRsYml4dmFjZWtoenl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjE2MzQ1MzQsImV4cCI6MjAzNzIxMDUzNH0.GmIYDhjQF9vAJN5u9uLajHgUqCNKDWIqp__h2I5N2U0`
-        },
-        body: JSON.stringify({ action: 'connect' }),
-        signal: abortControllerRef.current.signal
-      });
+      const response = await fetch(
+        `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+          },
+          body: JSON.stringify({ action: 'connect' }),
+          signal: abortControllerRef.current.signal
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
