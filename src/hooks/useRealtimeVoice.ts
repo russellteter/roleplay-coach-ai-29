@@ -423,11 +423,7 @@ Then explain the scenario and your role clearly. Be proactive and engaging. The 
               break;
 
             case EVENTS.SESSION_UPDATED:
-              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated');
-              break;
-
-            case EVENTS.SESSION_UPDATED:
-              logEvent('▷', 'SESSION_UPDATED', 'Session configured and ready');
+              logEvent('▷', 'SESSION_UPDATED', 'Session configuration updated and ready');
               dispatch({ type: 'CONFIGURED' });
               setConnectionStable(true);
               break;
