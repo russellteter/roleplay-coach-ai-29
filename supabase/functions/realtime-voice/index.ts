@@ -71,8 +71,17 @@ serve(async (req) => {
     const { headers } = req;
     const upgradeHeader = headers.get("upgrade") || "";
     
+    console.log("🔍 Request headers debug:", {
+      upgrade: upgradeHeader,
+      connection: headers.get("connection"),
+      secWebSocketKey: headers.get("sec-websocket-key"),
+      secWebSocketVersion: headers.get("sec-websocket-version")
+    });
+    
     if (upgradeHeader.toLowerCase() !== "websocket") {
-      console.log("❌ Not a WebSocket upgrade request");
+      console.log("❌ Not a WebSocket upgrade request - received:", upgradeHeader);
+      console.log("❌ Full request method:", req.method);
+      console.log("❌ Request URL:", req.url);
       return new Response("Expected WebSocket connection", { 
         status: 400,
         headers: corsHeaders 
@@ -80,7 +89,9 @@ serve(async (req) => {
     }
 
     console.log("🔌 Upgrading to WebSocket connection");
+    
     const { socket, response } = Deno.upgradeWebSocket(req);
+    console.log("✅ WebSocket upgrade successful");
     
     let openAISocket: WebSocket | null = null;
     let isConnected = false;
