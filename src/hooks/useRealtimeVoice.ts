@@ -124,6 +124,9 @@ export const useRealtimeVoice = () => {
   const isReadyToStart = state.state === ConnectionState.CONFIGURED;
   const isScenarioStarted = state.state === ConnectionState.STARTED;
   
+  // DEBUG: Log current state for troubleshooting
+  console.log('🔍 Current state:', state.state, 'isReadyToStart:', isReadyToStart, 'isConnected:', isConnected);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioQueueRef = useRef<AudioQueue | null>(null);

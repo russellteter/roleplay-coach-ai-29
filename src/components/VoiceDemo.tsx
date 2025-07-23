@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -64,6 +64,16 @@ const VoiceDemo = () => {
 
   const { scenarios, loading: scenariosLoading, error: scenariosError } = useScenarioPrompts();
 
+  // Show success toast when connection is ready for roleplay
+  useEffect(() => {
+    if (isReadyToStart && !isScenarioStarted && currentScenario) {
+      toast({
+        title: "Voice Session Ready",
+        description: "Click 'Begin Roleplay' to start the conversation with AI.",
+      });
+    }
+  }, [isReadyToStart, isScenarioStarted, currentScenario, toast]);
+
   // Filter scenarios by selected use case
   const filteredScenarios = scenarios.filter(scenario => 
     scenario.category === selectedUseCase
@@ -100,10 +110,7 @@ const VoiceDemo = () => {
 
     try {
       await connect(scenario);
-      toast({
-        title: "Voice Session Started",
-        description: "Microphone is ready. Click 'Begin Roleplay' to start the conversation.",
-      });
+      // Toast will be shown when connection reaches CONFIGURED state
     } catch (error) {
       toast({
         title: "Connection Failed",
