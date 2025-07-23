@@ -227,9 +227,7 @@ export const useRealtimeVoice = () => {
       // Log the full response structure
       console.log('🔍 [DEBUG] Full health check response:', {
         data: result.data,
-        error: result.error,
-        status: result.status,
-        statusText: result.statusText
+        error: result.error
       });
       
       // Check for Supabase client errors first
