@@ -121,7 +121,7 @@ export const useRealtimeVoice = () => {
   const hasError = state.state === ConnectionState.ERROR;
   
   // Refs for persistent connections and audio
-  const websocketRef = useRef<WebSocket | null>(null);
+  const streamConnectionRef = useRef<ReadableStreamDefaultReader | null>(null);
   const recorderRef = useRef<AudioRecorder | null>(null);
   const audioQueueRef = useRef<AudioQueue | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -129,6 +129,7 @@ export const useRealtimeVoice = () => {
   const scenarioRef = useRef<Scenario | null>(null);
   const sequenceIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const connectionIdRef = useRef<string | null>(null);
 
   // ====== HELPER FUNCTIONS ======
 
@@ -170,15 +171,14 @@ export const useRealtimeVoice = () => {
   const testEdgeFunctionHealth = useCallback(async () => {
     try {
       const response = await fetch(
-        `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice`,
+        `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/health`,
         {
-          method: 'POST',
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
             Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
-          },
-          body: JSON.stringify({ action: 'health' })
+          }
         }
       );
 
@@ -194,7 +194,7 @@ export const useRealtimeVoice = () => {
     }
   }, [logEvent]);
 
-  // Handle incoming WebSocket messages
+  // Handle streaming server events
   const handleStreamMessage = useCallback(async (data: any) => {
     try {
       logEvent('📨', `RECEIVED_${data.type}`, data);
@@ -202,6 +202,7 @@ export const useRealtimeVoice = () => {
       switch (data.type) {
         case 'connection.established':
           logEvent('✅', 'CONNECTION_ESTABLISHED', { connectionId: data.connectionId });
+          connectionIdRef.current = data.connectionId;
           dispatch({ type: 'ESTABLISHING' });
           break;
 
@@ -285,52 +286,102 @@ export const useRealtimeVoice = () => {
 
   // ====== CONNECTION MANAGEMENT ======
 
-  // WebSocket connection function
-  const connectWebSocket = useCallback(() => {
+  // HTTP Streaming connection function
+  const connectStream = useCallback(() => {
     return new Promise<void>((resolve, reject) => {
       try {
-        const wsUrl = `${import.meta.env.SUPABASE_WS_URL}/functions/v1/realtime-voice`;
-        logEvent('▷', 'WEBSOCKET_CONNECTING', { url: wsUrl });
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
         
-        const ws = new WebSocket(wsUrl);
-        websocketRef.current = ws;
-
-        ws.onopen = () => {
-          logEvent('✅', 'WEBSOCKET_CONNECTED', 'WebSocket connection established');
-          
-          // Send connect action
-          ws.send(JSON.stringify({ 
+        logEvent('▷', 'STREAM_CONNECTING', { url: `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/stream` });
+        
+        fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/stream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+          },
+          body: JSON.stringify({ 
             action: 'connect',
             timestamp: new Date().toISOString()
-          }));
+          }),
+          signal: abortController.signal
+        })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Stream connection failed: ${response.status}`);
+          }
+
+          if (!response.body) {
+            throw new Error('No response body for streaming');
+          }
+
+          logEvent('✅', 'STREAM_CONNECTED', 'HTTP stream established');
+          
+          const reader = response.body.getReader();
+          streamConnectionRef.current = reader;
+          const decoder = new TextDecoder();
           
           resolve();
-        };
 
-        ws.onmessage = async (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            await handleStreamMessage(data);
-          } catch (error) {
-            logEvent('❌', 'WS_MESSAGE_PARSE_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
+          // Process the streaming response
+          const processStream = async () => {
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                  logEvent('🔴', 'STREAM_ENDED', 'Stream completed');
+                  dispatch({ type: 'CLOSED' });
+                  break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const jsonData = line.slice(6).trim();
+                      if (jsonData && jsonData !== '[DONE]') {
+                        const data = JSON.parse(jsonData);
+                        await handleStreamMessage(data);
+                      }
+                    } catch (parseError) {
+                      logEvent('❌', 'STREAM_PARSE_ERROR', { error: parseError instanceof Error ? parseError.message : 'Unknown', line });
+                    }
+                  }
+                }
+              }
+            } catch (streamError) {
+              if (streamError.name === 'AbortError') {
+                logEvent('🔴', 'STREAM_ABORTED', 'Connection aborted by user');
+              } else {
+                logEvent('❌', 'STREAM_READ_ERROR', { error: streamError instanceof Error ? streamError.message : 'Unknown' });
+                setConnectionError('Stream reading failed');
+                dispatch({ type: 'ERROR', error: streamError instanceof Error ? streamError.message : 'Stream error' });
+              }
+            }
+          };
+
+          processStream();
+        })
+        .catch((fetchError) => {
+          if (fetchError.name === 'AbortError') {
+            logEvent('🔴', 'STREAM_FETCH_ABORTED', 'Fetch aborted by user');
+          } else {
+            logEvent('❌', 'STREAM_FETCH_ERROR', { error: fetchError instanceof Error ? fetchError.message : 'Unknown' });
+            setConnectionError('Failed to establish stream connection');
+            dispatch({ type: 'ERROR', error: fetchError instanceof Error ? fetchError.message : 'Connection failed' });
+            reject(fetchError);
           }
-        };
-
-        ws.onerror = (error) => {
-          logEvent('❌', 'WEBSOCKET_ERROR', { error });
-          setConnectionError('WebSocket connection failed');
-          dispatch({ type: 'ERROR', error: 'WebSocket connection failed' });
-          reject(error);
-        };
-
-        ws.onclose = (event) => {
-          logEvent('🔴', 'WEBSOCKET_CLOSED', { code: event.code, reason: event.reason });
-          dispatch({ type: 'CLOSED' });
-          websocketRef.current = null;
-        };
+        });
 
       } catch (error) {
-        logEvent('❌', 'WEBSOCKET_CREATE_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
+        logEvent('❌', 'STREAM_CREATE_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
         reject(error);
       }
     });
@@ -357,10 +408,10 @@ export const useRealtimeVoice = () => {
       // Initialize audio system
       await initializeAudioContext();
 
-      // Connect via WebSocket
-      await connectWebSocket();
+      // Connect via HTTP streaming
+      await connectStream();
       
-      logEvent('▷', 'CONNECTION_ESTABLISHED', 'WebSocket connection ready');
+      logEvent('▷', 'CONNECTION_ESTABLISHED', 'HTTP stream connection ready');
       dispatch({ type: 'ESTABLISHING' });
       setConnectionStable(true);
 
@@ -369,7 +420,7 @@ export const useRealtimeVoice = () => {
       setConnectionError(error instanceof Error ? error.message : 'Connection failed');
       dispatch({ type: 'ERROR', error: error instanceof Error ? error.message : 'Unknown error' });
     }
-  }, [state.state, logEvent, testEdgeFunctionHealth, initializeAudioContext, connectWebSocket]);
+  }, [state.state, logEvent, testEdgeFunctionHealth, initializeAudioContext, connectStream]);
 
   // ====== SCENARIO MANAGEMENT ======
 
@@ -385,8 +436,8 @@ export const useRealtimeVoice = () => {
       return;
     }
 
-    if (!websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
-      setConnectionError('WebSocket not connected. Please reconnect.');
+    if (!streamConnectionRef.current || !connectionIdRef.current) {
+      setConnectionError('Stream not connected. Please reconnect.');
       return;
     }
 
@@ -404,16 +455,28 @@ export const useRealtimeVoice = () => {
       // Change state to STARTED
       dispatch({ type: 'STARTED' });
       
-      // Send scenario start message via WebSocket
+      // Send scenario start message via HTTP POST
       if (scenario.openingMessage) {
         const message = {
           action: 'startScenario',
+          connectionId: connectionIdRef.current,
           scenarioId: scenario.id,
           openingMessage: scenario.openingMessage,
           timestamp: new Date().toISOString()
         };
 
-        websocketRef.current.send(JSON.stringify(message));
+        fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+          },
+          body: JSON.stringify(message)
+        }).catch(error => {
+          logEvent('❌', 'SCENARIO_POST_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
+        });
+
         logEvent('▷', 'SCENARIO_MESSAGE_SENT', { 
           scenarioId: scenario.id,
           openingMessage: scenario.openingMessage.substring(0, 100) + '...'
@@ -447,18 +510,31 @@ export const useRealtimeVoice = () => {
       }
 
       recorderRef.current = new AudioRecorder((audioData) => {
-        if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+        if (streamConnectionRef.current && connectionIdRef.current) {
           const base64Audio = encodeAudioForAPI(audioData);
           sequenceIdRef.current += 1;
           
           const message = {
             action: 'audioChunk',
+            connectionId: connectionIdRef.current,
             data: base64Audio,
             sequenceId: sequenceIdRef.current,
             timestamp: new Date().toISOString()
           };
           
-          websocketRef.current.send(JSON.stringify(message));
+          // Send audio chunk via HTTP POST
+          fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+            },
+            body: JSON.stringify(message)
+          }).catch(error => {
+            logEvent('❌', 'AUDIO_POST_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
+          });
+          
           logEvent('▷', 'AUDIO_SENT', `${audioData.length} samples, seq: ${sequenceIdRef.current}`);
         }
       });
@@ -485,7 +561,7 @@ export const useRealtimeVoice = () => {
 
   // Send text message
   const sendTextMessage = useCallback((message: string) => {
-    if (!websocketRef.current || websocketRef.current.readyState !== WebSocket.OPEN) {
+    if (!streamConnectionRef.current || !connectionIdRef.current) {
       setConnectionError('Not connected. Please reconnect.');
       return;
     }
@@ -493,11 +569,22 @@ export const useRealtimeVoice = () => {
     try {
       const textMessage = {
         action: 'textMessage',
+        connectionId: connectionIdRef.current,
         message: message,
         timestamp: new Date().toISOString()
       };
 
-      websocketRef.current.send(JSON.stringify(textMessage));
+      fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+        },
+        body: JSON.stringify(textMessage)
+      }).catch(error => {
+        logEvent('❌', 'TEXT_POST_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
+      });
       logEvent('📝', 'TEXT_MESSAGE_SENT', { message: message.substring(0, 50) + '...' });
     } catch (error) {
       logEvent('❌', 'TEXT_MESSAGE_ERROR', { error: error instanceof Error ? error.message : 'Unknown' });
@@ -537,10 +624,10 @@ export const useRealtimeVoice = () => {
       audioContextRef.current = null;
     }
 
-    // Close WebSocket
-    if (websocketRef.current) {
-      websocketRef.current.close();
-      websocketRef.current = null;
+    // Close stream connection
+    if (streamConnectionRef.current) {
+      streamConnectionRef.current.cancel();
+      streamConnectionRef.current = null;
     }
 
     // Cancel any pending HTTP requests

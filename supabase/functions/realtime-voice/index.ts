@@ -6,6 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Store active connections
+const activeConnections = new Map<string, {
+  openAISocket: WebSocket | null;
+  clientWriter: WritableStreamDefaultWriter | null;
+  connectionId: string;
+}>();
+
 serve(async (req) => {
   try {
     console.log(`🌐 ${req.method} ${req.url}`);
@@ -14,13 +21,6 @@ serve(async (req) => {
     if (req.method === 'OPTIONS') {
       console.log("✅ Handling CORS preflight request");
       return new Response(null, { headers: corsHeaders });
-    }
-
-    // Handle WebSocket upgrade requests
-    const upgradeHeader = req.headers.get("upgrade")?.toLowerCase();
-    if (upgradeHeader === "websocket") {
-      console.log("🔄 Handling WebSocket upgrade request");
-      return handleWebSocketConnection(req);
     }
 
     // Check for OpenAI API key first
@@ -39,8 +39,12 @@ serve(async (req) => {
 
     console.log("✅ OpenAI API key found");
 
+    // Extract path from URL
+    const url = new URL(req.url);
+    const path = url.pathname.split('/').pop();
+
     // Handle health check requests
-    if (req.method === 'GET' && req.url.includes('/health')) {
+    if (path === 'health' && req.method === 'GET') {
       console.log("💚 Health check requested");
       return new Response(JSON.stringify({
         status: "healthy",
@@ -52,31 +56,23 @@ serve(async (req) => {
       });
     }
 
-    // Handle POST requests for health check
-    if (req.method === 'POST') {
-      try {
-        const body = await req.json();
-        if (body && body.action === 'health') {
-          console.log("💚 Health check requested via POST");
-          return new Response(JSON.stringify({
-            status: "healthy",
-            message: "Realtime voice edge function is running",
-            timestamp: new Date().toISOString(),
-            hasOpenAIKey: !!apiKey
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          });
-        }
-      } catch (e) {
-        console.log("📝 POST request without valid JSON body");
-      }
+    // Handle streaming connection requests
+    if (path === 'stream' && req.method === 'POST') {
+      console.log("🌊 Starting HTTP stream connection");
+      return handleStreamConnection(req, apiKey);
+    }
+
+    // Handle action requests (audio chunks, text messages, scenario starts)
+    if (path === 'action' && req.method === 'POST') {
+      console.log("📝 Handling action request");
+      return handleActionRequest(req, apiKey);
     }
 
     // Invalid request
     console.log("❌ Invalid request format");
     return new Response(JSON.stringify({
       error: "Invalid request",
-      message: "Expected WebSocket upgrade or health check",
+      message: "Expected /health, /stream, or /action endpoint",
       timestamp: new Date().toISOString()
     }), {
       status: 400,
@@ -96,60 +92,163 @@ serve(async (req) => {
   }
 });
 
-// WebSocket connection handler
-async function handleWebSocketConnection(req: Request) {
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    return new Response("OpenAI API key not configured", { status: 500 });
+// Handle streaming connection establishment
+async function handleStreamConnection(req: Request, apiKey: string) {
+  try {
+    const body = await req.json();
+    
+    if (body.action !== 'connect') {
+      return new Response('Invalid action for stream endpoint', { 
+        status: 400, 
+        headers: corsHeaders 
+      });
+    }
+
+    const connectionId = crypto.randomUUID();
+    console.log(`🔗 Creating new stream connection: ${connectionId}`);
+
+    // Create a TransformStream for server-sent events
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+
+    // Store connection info
+    activeConnections.set(connectionId, {
+      openAISocket: null,
+      clientWriter: writer,
+      connectionId
+    });
+
+    // Establish OpenAI connection
+    await establishOpenAIConnection(connectionId, apiKey, writer);
+
+    // Set up SSE headers
+    const headers = {
+      ...corsHeaders,
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    };
+
+    console.log(`✅ Stream connection established: ${connectionId}`);
+    return new Response(readable, { headers });
+
+  } catch (error) {
+    console.error("❌ Error in stream connection:", error);
+    return new Response(JSON.stringify({
+      error: "Failed to establish stream connection",
+      message: error.message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
+}
 
-  const { socket, response } = Deno.upgradeWebSocket(req);
-  let openAISocket: WebSocket | null = null;
-  let connectionId: string | null = null;
+// Handle action requests (audio, text, scenario)
+async function handleActionRequest(req: Request, apiKey: string) {
+  try {
+    const body = await req.json();
+    const { action, connectionId } = body;
 
-  socket.onopen = () => {
-    console.log("✅ Client WebSocket connected");
-  };
+    if (!connectionId) {
+      return new Response(JSON.stringify({
+        error: "Connection ID required"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
-  socket.onmessage = async (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      console.log(`📨 Client -> Edge: ${data.action}`);
+    const connection = activeConnections.get(connectionId);
+    if (!connection || !connection.openAISocket) {
+      return new Response(JSON.stringify({
+        error: "Connection not found or not ready"
+      }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
 
-      if (data.action === 'connect') {
-        console.log("🔗 Connecting to OpenAI Realtime API...");
-        connectionId = crypto.randomUUID();
-        
-        const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
-        openAISocket = new WebSocket(openAIUrl, [], {
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "OpenAI-Beta": "realtime=v1"
-          }
-        });
+    console.log(`📤 Processing action: ${action} for connection: ${connectionId}`);
 
-        openAISocket.onopen = () => {
-          console.log("✅ Connected to OpenAI Realtime API");
-          socket.send(JSON.stringify({
-            type: 'connection.established',
-            connectionId: connectionId,
-            timestamp: new Date().toISOString()
-          }));
-        };
+    switch (action) {
+      case 'startScenario':
+        await handleStartScenario(connection.openAISocket, body);
+        break;
+      
+      case 'audioChunk':
+        await handleAudioChunk(connection.openAISocket, body);
+        break;
+      
+      case 'textMessage':
+        await handleTextMessage(connection.openAISocket, body);
+        break;
+      
+      default:
+        console.log(`❓ Unknown action: ${action}`);
+    }
 
-        openAISocket.onmessage = (event) => {
-          try {
-            const openAIData = JSON.parse(event.data);
-            console.log(`📨 OpenAI -> Edge: ${openAIData.type}`);
+    return new Response(JSON.stringify({
+      success: true,
+      action,
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
-            // Handle session.created to send configuration
-            if (openAIData.type === 'session.created') {
-              console.log("⚙️ Sending session configuration");
-              const sessionConfig = {
-                type: 'session.update',
-                session: {
-                  modalities: ["text", "audio"],
-                  instructions: `You are Sharpen, an advanced AI roleplay coach that helps people practice important conversations through voice interaction.
+  } catch (error) {
+    console.error("❌ Error in action request:", error);
+    return new Response(JSON.stringify({
+      error: "Action processing failed",
+      message: error.message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Establish OpenAI WebSocket connection
+async function establishOpenAIConnection(connectionId: string, apiKey: string, writer: WritableStreamDefaultWriter) {
+  try {
+    console.log(`🔗 Connecting to OpenAI for connection: ${connectionId}`);
+    
+    const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
+    const openAISocket = new WebSocket(openAIUrl, [], {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "OpenAI-Beta": "realtime=v1"
+      }
+    });
+
+    // Update connection with OpenAI socket
+    const connection = activeConnections.get(connectionId);
+    if (connection) {
+      connection.openAISocket = openAISocket;
+    }
+
+    openAISocket.onopen = async () => {
+      console.log(`✅ OpenAI connected for ${connectionId}`);
+      await writeSSEMessage(writer, {
+        type: 'connection.established',
+        connectionId: connectionId,
+        timestamp: new Date().toISOString()
+      });
+    };
+
+    openAISocket.onmessage = async (event) => {
+      try {
+        const openAIData = JSON.parse(event.data);
+        console.log(`📨 OpenAI -> Stream: ${openAIData.type} for ${connectionId}`);
+
+        // Handle session.created to send configuration
+        if (openAIData.type === 'session.created') {
+          console.log(`⚙️ Sending session configuration for ${connectionId}`);
+          const sessionConfig = {
+            type: 'session.update',
+            session: {
+              modalities: ["text", "audio"],
+              instructions: `You are Sharpen, an advanced AI roleplay coach that helps people practice important conversations through voice interaction.
 
 CRITICAL BEHAVIOR RULES:
 1. When a roleplay scenario starts, YOU must speak first immediately after receiving the scenario setup
@@ -167,129 +266,137 @@ RESPONSE STYLE:
 - Help create an immersive practice experience
 
 Remember: You are not just an AI assistant - you are playing a specific role to help the user practice. Stay in character and make the conversation feel real.`,
-                  voice: "alloy",
-                  input_audio_format: "pcm16",
-                  output_audio_format: "pcm16",
-                  input_audio_transcription: {
-                    model: "whisper-1"
-                  },
-                  turn_detection: {
-                    type: "server_vad",
-                    threshold: 0.5,
-                    prefix_padding_ms: 300,
-                    silence_duration_ms: 1200
-                  },
-                  temperature: 0.8,
-                  max_response_output_tokens: "inf"
-                }
-              };
-              openAISocket!.send(JSON.stringify(sessionConfig));
-            }
-
-            // Send session.ready after session.updated
-            if (openAIData.type === 'session.updated') {
-              socket.send(JSON.stringify({
-                type: 'session.ready',
-                timestamp: new Date().toISOString(),
-                message: 'Session configured and ready'
-              }));
-            }
-
-            // Forward all OpenAI messages to client
-            socket.send(JSON.stringify(openAIData));
-            
-          } catch (error) {
-            console.error("❌ Error processing OpenAI message:", error);
-          }
-        };
-
-        openAISocket.onerror = (error) => {
-          console.error("❌ OpenAI WebSocket error:", error);
-          socket.send(JSON.stringify({
-            type: 'error',
-            error: 'OpenAI connection failed'
-          }));
-        };
-
-        openAISocket.onclose = () => {
-          console.log("🔴 OpenAI WebSocket closed");
-          socket.send(JSON.stringify({
-            type: 'connection.closed',
-            timestamp: new Date().toISOString()
-          }));
-        };
-      }
-
-      else if (data.action === 'startScenario') {
-        console.log(`📤 Starting scenario: ${data.scenarioId}`);
-        if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-          // Send opening message as conversation item
-          const conversationItem = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'user',
-              content: [{
-                type: 'input_text',
-                text: data.openingMessage
-              }]
+              voice: "alloy",
+              input_audio_format: "pcm16",
+              output_audio_format: "pcm16",
+              input_audio_transcription: {
+                model: "whisper-1"
+              },
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 1200
+              },
+              temperature: 0.8,
+              max_response_output_tokens: "inf"
             }
           };
-          
-          openAISocket.send(JSON.stringify(conversationItem));
-          openAISocket.send(JSON.stringify({ type: 'response.create' }));
-          console.log("📤 Sent scenario opening message to OpenAI");
+          openAISocket.send(JSON.stringify(sessionConfig));
         }
-      }
 
-      else if (data.action === 'audioChunk') {
-        if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-          // Forward audio chunk to OpenAI
-          const audioEvent = {
-            type: 'input_audio_buffer.append',
-            audio: data.data
-          };
-          openAISocket.send(JSON.stringify(audioEvent));
+        // Send session.ready after session.updated
+        if (openAIData.type === 'session.updated') {
+          await writeSSEMessage(writer, {
+            type: 'session.ready',
+            timestamp: new Date().toISOString(),
+            message: 'Session configured and ready'
+          });
         }
+
+        // Forward all OpenAI messages to client via SSE
+        await writeSSEMessage(writer, openAIData);
+        
+      } catch (error) {
+        console.error(`❌ Error processing OpenAI message for ${connectionId}:`, error);
       }
+    };
 
-      else if (data.action === 'textMessage') {
-        if (openAISocket && openAISocket.readyState === WebSocket.OPEN) {
-          const conversationItem = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'user',
-              content: [{
-                type: 'input_text',
-                text: data.message
-              }]
-            }
-          };
-          
-          openAISocket.send(JSON.stringify(conversationItem));
-          openAISocket.send(JSON.stringify({ type: 'response.create' }));
-        }
+    openAISocket.onerror = async (error) => {
+      console.error(`❌ OpenAI WebSocket error for ${connectionId}:`, error);
+      await writeSSEMessage(writer, {
+        type: 'error',
+        error: 'OpenAI connection failed'
+      });
+    };
+
+    openAISocket.onclose = async () => {
+      console.log(`🔴 OpenAI WebSocket closed for ${connectionId}`);
+      await writeSSEMessage(writer, {
+        type: 'connection.closed',
+        timestamp: new Date().toISOString()
+      });
+      
+      // Clean up connection
+      activeConnections.delete(connectionId);
+      try {
+        await writer.close();
+      } catch (e) {
+        console.log(`Connection writer already closed for ${connectionId}`);
       }
+    };
 
-    } catch (error) {
-      console.error("❌ Error processing client message:", error);
-    }
-  };
+  } catch (error) {
+    console.error(`❌ Error establishing OpenAI connection for ${connectionId}:`, error);
+    await writeSSEMessage(writer, {
+      type: 'error',
+      error: 'Failed to establish OpenAI connection'
+    });
+  }
+}
 
-  socket.onclose = () => {
-    console.log("🔴 Client WebSocket disconnected");
-    if (openAISocket) {
-      openAISocket.close();
-    }
-  };
+// Helper function to write SSE messages
+async function writeSSEMessage(writer: WritableStreamDefaultWriter, data: any) {
+  try {
+    const message = `data: ${JSON.stringify(data)}\n\n`;
+    await writer.write(new TextEncoder().encode(message));
+  } catch (error) {
+    console.error("❌ Error writing SSE message:", error);
+  }
+}
 
-  socket.onerror = (error) => {
-    console.error("❌ Client WebSocket error:", error);
-    if (openAISocket) {
-      openAISocket.close();
-    }
-  };
+// Handle scenario start
+async function handleStartScenario(openAISocket: WebSocket, body: any) {
+  if (openAISocket.readyState === WebSocket.OPEN) {
+    console.log(`📤 Starting scenario: ${body.scenarioId}`);
+    
+    // Send opening message as conversation item
+    const conversationItem = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: body.openingMessage
+        }]
+      }
+    };
+    
+    openAISocket.send(JSON.stringify(conversationItem));
+    openAISocket.send(JSON.stringify({ type: 'response.create' }));
+    console.log("📤 Sent scenario opening message to OpenAI");
+  }
+}
 
-  return response;
+// Handle audio chunk
+async function handleAudioChunk(openAISocket: WebSocket, body: any) {
+  if (openAISocket.readyState === WebSocket.OPEN) {
+    // Forward audio chunk to OpenAI
+    const audioEvent = {
+      type: 'input_audio_buffer.append',
+      audio: body.data
+    };
+    openAISocket.send(JSON.stringify(audioEvent));
+  }
+}
+
+// Handle text message
+async function handleTextMessage(openAISocket: WebSocket, body: any) {
+  if (openAISocket.readyState === WebSocket.OPEN) {
+    const conversationItem = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: body.message
+        }]
+      }
+    };
+    
+    openAISocket.send(JSON.stringify(conversationItem));
+    openAISocket.send(JSON.stringify({ type: 'response.create' }));
+  }
 }
