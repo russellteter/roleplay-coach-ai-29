@@ -22,8 +22,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      'import.meta.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
-      'import.meta.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify(env.SUPABASE_PUBLISHABLE_KEY),
+      'import.meta.env.SUPABASE_URL': JSON.stringify('https://xirbkztlbixvacekhzyv.supabase.co'),
+      'import.meta.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpcmJrenRsYml4dmFjZWtoenl2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk2NDQyODAsImV4cCI6MjA2NTIyMDI4MH0.rRiE4SggfVEWvJattoTdXhs5mWIK4Ulfw6OV7INvDtg'),
     },
   };
 });
