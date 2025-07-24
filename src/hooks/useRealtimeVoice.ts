@@ -129,7 +129,7 @@ export const useRealtimeVoice = () => {
   const scenarioRef = useRef<Scenario | null>(null);
   const sequenceIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const connectionIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   // ====== HELPER FUNCTIONS ======
 
@@ -201,8 +201,8 @@ export const useRealtimeVoice = () => {
 
       switch (data.type) {
         case 'connection.established':
-          logEvent('✅', 'CONNECTION_ESTABLISHED', { connectionId: data.connectionId });
-          connectionIdRef.current = data.connectionId;
+          logEvent('✅', 'CONNECTION_ESTABLISHED', { sessionId: data.sessionId });
+          sessionIdRef.current = data.sessionId;
           dispatch({ type: 'ESTABLISHING' });
           break;
 
@@ -286,28 +286,24 @@ export const useRealtimeVoice = () => {
 
   // ====== CONNECTION MANAGEMENT ======
 
-  // HTTP Streaming connection function
-  const connectStream = useCallback(() => {
+  // HTTP Streaming connection function for specific scenario
+  const connectStream = useCallback((scenarioId: string) => {
     return new Promise<void>((resolve, reject) => {
       try {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
         
-        logEvent('▷', 'STREAM_CONNECTING', { url: `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/stream` });
+        const streamUrl = `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice?scenarioId=${scenarioId}`;
+        logEvent('▷', 'STREAM_CONNECTING', { url: streamUrl });
         
-        fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/stream`, {
-          method: 'POST',
+        fetch(streamUrl, {
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/json',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
             Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
           },
-          body: JSON.stringify({ 
-            action: 'connect',
-            timestamp: new Date().toISOString()
-          }),
           signal: abortController.signal
         })
         .then(async (response) => {
@@ -340,19 +336,16 @@ export const useRealtimeVoice = () => {
                 }
 
                 const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
+                const lines = chunk.split('\n').filter(line => line.trim());
 
                 for (const line of lines) {
-                  if (line.startsWith('data: ')) {
-                    try {
-                      const jsonData = line.slice(6).trim();
-                      if (jsonData && jsonData !== '[DONE]') {
-                        const data = JSON.parse(jsonData);
-                        await handleStreamMessage(data);
-                      }
-                    } catch (parseError) {
-                      logEvent('❌', 'STREAM_PARSE_ERROR', { error: parseError instanceof Error ? parseError.message : 'Unknown', line });
+                  try {
+                    if (line.trim()) {
+                      const data = JSON.parse(line);
+                      await handleStreamMessage(data);
                     }
+                  } catch (parseError) {
+                    logEvent('❌', 'STREAM_PARSE_ERROR', { error: parseError instanceof Error ? parseError.message : 'Unknown', line });
                   }
                 }
               }
@@ -387,10 +380,15 @@ export const useRealtimeVoice = () => {
     });
   }, [logEvent, handleStreamMessage]);
 
-  // Main connection function
-  const connect = useCallback(async () => {
+  // Main connection function now requires a scenario
+  const connect = useCallback(async (scenario: Scenario) => {
     if (state.state === ConnectionState.OPENING || state.state === ConnectionState.ESTABLISHING) {
       logEvent('⚠️', 'CONNECTION_ATTEMPT_IGNORED', 'Connection already in progress');
+      return;
+    }
+
+    if (!scenario) {
+      setConnectionError('Scenario required for connection');
       return;
     }
 
@@ -405,14 +403,17 @@ export const useRealtimeVoice = () => {
         return;
       }
 
+      // Store scenario reference
+      scenarioRef.current = scenario;
+      setCurrentScenario(scenario);
+
       // Initialize audio system
       await initializeAudioContext();
 
-      // Connect via HTTP streaming
-      await connectStream();
+      // Connect via HTTP streaming with scenario ID
+      await connectStream(scenario.id);
       
       logEvent('▷', 'CONNECTION_ESTABLISHED', 'HTTP stream connection ready');
-      dispatch({ type: 'ESTABLISHING' });
       setConnectionStable(true);
 
     } catch (error) {
@@ -424,7 +425,7 @@ export const useRealtimeVoice = () => {
 
   // ====== SCENARIO MANAGEMENT ======
 
-  // Start scenario function
+  // Start scenario function - now sends opening message immediately
   const startScenario = useCallback(async (scenario: Scenario) => {
     if (!scenario) {
       setConnectionError('No scenario provided');
@@ -436,7 +437,7 @@ export const useRealtimeVoice = () => {
       return;
     }
 
-    if (!streamConnectionRef.current || !connectionIdRef.current) {
+    if (!streamConnectionRef.current || !sessionIdRef.current) {
       setConnectionError('Stream not connected. Please reconnect.');
       return;
     }
@@ -448,24 +449,18 @@ export const useRealtimeVoice = () => {
         hasOpeningMessage: !!scenario.openingMessage 
       });
 
-      // Store scenario reference
-      scenarioRef.current = scenario;
-      setCurrentScenario(scenario);
-
       // Change state to STARTED
       dispatch({ type: 'STARTED' });
       
       // Send scenario start message via HTTP POST
       if (scenario.openingMessage) {
         const message = {
+          sessionId: sessionIdRef.current,
           action: 'startScenario',
-          connectionId: connectionIdRef.current,
-          scenarioId: scenario.id,
-          openingMessage: scenario.openingMessage,
-          timestamp: new Date().toISOString()
+          payload: scenario.openingMessage
         };
 
-        fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+        fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -510,20 +505,18 @@ export const useRealtimeVoice = () => {
       }
 
       recorderRef.current = new AudioRecorder((audioData) => {
-        if (streamConnectionRef.current && connectionIdRef.current) {
+        if (streamConnectionRef.current && sessionIdRef.current) {
           const base64Audio = encodeAudioForAPI(audioData);
           sequenceIdRef.current += 1;
           
           const message = {
+            sessionId: sessionIdRef.current,
             action: 'audioChunk',
-            connectionId: connectionIdRef.current,
-            data: base64Audio,
-            sequenceId: sequenceIdRef.current,
-            timestamp: new Date().toISOString()
+            payload: base64Audio
           };
           
           // Send audio chunk via HTTP POST
-          fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+          fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -561,20 +554,19 @@ export const useRealtimeVoice = () => {
 
   // Send text message
   const sendTextMessage = useCallback((message: string) => {
-    if (!streamConnectionRef.current || !connectionIdRef.current) {
+    if (!streamConnectionRef.current || !sessionIdRef.current) {
       setConnectionError('Not connected. Please reconnect.');
       return;
     }
 
     try {
       const textMessage = {
+        sessionId: sessionIdRef.current,
         action: 'textMessage',
-        connectionId: connectionIdRef.current,
-        message: message,
-        timestamp: new Date().toISOString()
+        payload: message
       };
 
-      fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice/action`, {
+      fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -653,10 +645,10 @@ export const useRealtimeVoice = () => {
 
   // Retry connection
   const retryConnection = useCallback(() => {
-    if (state.retryCount < maxRetries) {
+    if (state.retryCount < maxRetries && scenarioRef.current) {
       logEvent('🔄', 'RETRY_INITIATED', { attempt: state.retryCount + 1, maxRetries });
       dispatch({ type: 'RETRY' });
-      connect();
+      connect(scenarioRef.current);
     } else {
       logEvent('❌', 'RETRY_EXHAUSTED', { maxRetries });
       setConnectionError('Maximum retry attempts reached. Please try again later.');
@@ -701,15 +693,22 @@ export const useRealtimeVoice = () => {
     retryCount: state.retryCount,
     
     // Control functions
-    connect: (scenario?: Scenario) => {
-      if (scenario) {
-        scenarioRef.current = scenario;
-        setCurrentScenario(scenario);
-      }
-      return connect();
+    connect: (scenario: Scenario) => {
+      scenarioRef.current = scenario;
+      setCurrentScenario(scenario);
+      return connect(scenario);
     },
     disconnect,
-    retryConnection,
+    retryConnection: () => {
+      if (state.retryCount < maxRetries && scenarioRef.current) {
+        logEvent('🔄', 'RETRY_INITIATED', { attempt: state.retryCount + 1, maxRetries });
+        dispatch({ type: 'RETRY' });
+        return connect(scenarioRef.current);
+      } else {
+        logEvent('❌', 'RETRY_EXHAUSTED', { maxRetries });
+        setConnectionError('Maximum retry attempts reached. Please try again later.');
+      }
+    },
     startScenario: () => {
       if (scenarioRef.current) {
         return startScenario(scenarioRef.current);

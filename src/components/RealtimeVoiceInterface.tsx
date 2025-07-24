@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Mic, MicOff, Volume2, VolumeX, Phone, PhoneOff, MessageSquare, Send, Bug, AlertTriangle, RefreshCw } from 'lucide-react';
-import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
+import { useRealtimeVoice, Scenario } from '@/hooks/useRealtimeVoice';
 import { useToast } from '@/components/ui/use-toast';
 import AudioDiagnostics from './AudioDiagnostics';
 import { audioDebugger } from '@/utils/AudioDebugger';
@@ -39,10 +39,19 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
     audioContext: realtimeAudioContext
   } = useRealtimeVoice();
 
+  // Default scenario for testing
+  const defaultScenario: Scenario = {
+    id: 'test-scenario',
+    title: 'General Voice Test',
+    description: 'Test real-time voice communication',
+    category: 'general',
+    openingMessage: 'Hello! I am ready to help you practice communication. What would you like to work on today?'
+  };
+
   const handleConnect = async () => {
     try {
       audioDebugger.log('User initiated connection');
-      await connect();
+      await connect(defaultScenario);
       toast({
         title: "Connected",
         description: "Ready for real-time voice conversation",

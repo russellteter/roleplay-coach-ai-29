@@ -38,21 +38,6 @@ const CompactVoiceInterface = () => {
   const { scenarios, loading: scenariosLoading, error: scenariosError } = useScenarioPrompts();
   const availableScenarios = scenarios.length > 0 ? scenarios : HEALTHCARE_SCENARIOS;
 
-  const handleConnect = async () => {
-    try {
-      await connect();
-      toast({
-        title: "Connected",
-        description: "Ready for voice coaching",
-      });
-    } catch (error) {
-      toast({
-        title: "Connection Failed",
-        description: "Could not connect to voice service",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleStartVoiceSession = async (scenario: Scenario) => {
     try {
@@ -161,15 +146,6 @@ const CompactVoiceInterface = () => {
             ))}
           </div>
           
-          <div className="text-center pt-4 border-t border-primary-foreground/20">
-            <Button 
-              onClick={handleConnect} 
-              variant="ghost"
-              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            >
-              Or connect without a scenario
-            </Button>
-          </div>
         </Card>
       )}
 

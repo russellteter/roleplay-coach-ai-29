@@ -6,11 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Store active connections
-const activeConnections = new Map<string, {
+// Store active sessions
+const activeSessions = new Map<string, {
   openAISocket: WebSocket | null;
   clientWriter: WritableStreamDefaultWriter | null;
-  connectionId: string;
+  sessionId: string;
 }>();
 
 serve(async (req) => {
@@ -56,23 +56,23 @@ serve(async (req) => {
       });
     }
 
-    // Handle streaming connection requests
-    if (path === 'stream' && req.method === 'POST') {
-      console.log("🌊 Starting HTTP stream connection");
-      return handleStreamConnection(req, apiKey);
+    // Handle streaming AI audio - GET /realtime-voice
+    if (req.method === 'GET' && (path === 'realtime-voice' || url.pathname.endsWith('/realtime-voice'))) {
+      console.log("🌊 Starting AI audio stream");
+      return handleAudioStream(url, apiKey);
     }
 
-    // Handle action requests (audio chunks, text messages, scenario starts)
-    if (path === 'action' && req.method === 'POST') {
-      console.log("📝 Handling action request");
-      return handleActionRequest(req, apiKey);
+    // Handle user input - POST /realtime-audio
+    if (req.method === 'POST' && (path === 'realtime-audio' || url.pathname.endsWith('/realtime-audio'))) {
+      console.log("📝 Handling user input");
+      return handleUserInput(req, apiKey);
     }
 
     // Invalid request
     console.log("❌ Invalid request format");
     return new Response(JSON.stringify({
       error: "Invalid request",
-      message: "Expected /health, /stream, or /action endpoint",
+      message: "Expected GET /realtime-voice or POST /realtime-audio",
       timestamp: new Date().toISOString()
     }), {
       status: 400,
@@ -92,50 +92,51 @@ serve(async (req) => {
   }
 });
 
-// Handle streaming connection establishment
-async function handleStreamConnection(req: Request, apiKey: string) {
+// Handle AI audio streaming - GET /realtime-voice?scenarioId=xxx
+async function handleAudioStream(url: URL, apiKey: string) {
   try {
-    const body = await req.json();
-    
-    if (body.action !== 'connect') {
-      return new Response('Invalid action for stream endpoint', { 
-        status: 400, 
-        headers: corsHeaders 
+    const scenarioId = url.searchParams.get('scenarioId');
+    if (!scenarioId) {
+      return new Response(JSON.stringify({
+        error: "scenarioId query parameter required"
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const connectionId = crypto.randomUUID();
-    console.log(`🔗 Creating new stream connection: ${connectionId}`);
+    const sessionId = crypto.randomUUID();
+    console.log(`🔗 Creating new audio stream session: ${sessionId} for scenario: ${scenarioId}`);
 
-    // Create a TransformStream for server-sent events
+    // Create a TransformStream for newline-delimited JSON
     const { readable, writable } = new TransformStream();
     const writer = writable.getWriter();
 
-    // Store connection info
-    activeConnections.set(connectionId, {
+    // Store session info
+    activeSessions.set(sessionId, {
       openAISocket: null,
       clientWriter: writer,
-      connectionId
+      sessionId
     });
 
     // Establish OpenAI connection
-    await establishOpenAIConnection(connectionId, apiKey, writer);
+    await establishOpenAIConnection(sessionId, apiKey, writer);
 
-    // Set up SSE headers
+    // Set up streaming headers
     const headers = {
       ...corsHeaders,
-      'Content-Type': 'text/event-stream',
+      'Content-Type': 'application/json',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     };
 
-    console.log(`✅ Stream connection established: ${connectionId}`);
+    console.log(`✅ Audio stream established: ${sessionId}`);
     return new Response(readable, { headers });
 
   } catch (error) {
-    console.error("❌ Error in stream connection:", error);
+    console.error("❌ Error in audio stream:", error);
     return new Response(JSON.stringify({
-      error: "Failed to establish stream connection",
+      error: "Failed to establish audio stream",
       message: error.message
     }), {
       status: 500,
@@ -144,44 +145,44 @@ async function handleStreamConnection(req: Request, apiKey: string) {
   }
 }
 
-// Handle action requests (audio, text, scenario)
-async function handleActionRequest(req: Request, apiKey: string) {
+// Handle user input - POST /realtime-audio
+async function handleUserInput(req: Request, apiKey: string) {
   try {
     const body = await req.json();
-    const { action, connectionId } = body;
+    const { sessionId, action, payload } = body;
 
-    if (!connectionId) {
+    if (!sessionId) {
       return new Response(JSON.stringify({
-        error: "Connection ID required"
+        error: "sessionId required"
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    const connection = activeConnections.get(connectionId);
-    if (!connection || !connection.openAISocket) {
+    const session = activeSessions.get(sessionId);
+    if (!session || !session.openAISocket) {
       return new Response(JSON.stringify({
-        error: "Connection not found or not ready"
+        error: "Session not found or not ready"
       }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    console.log(`📤 Processing action: ${action} for connection: ${connectionId}`);
+    console.log(`📤 Processing action: ${action} for session: ${sessionId}`);
 
     switch (action) {
       case 'startScenario':
-        await handleStartScenario(connection.openAISocket, body);
+        await handleStartScenario(session.openAISocket, payload);
         break;
       
       case 'audioChunk':
-        await handleAudioChunk(connection.openAISocket, body);
+        await handleAudioChunk(session.openAISocket, payload);
         break;
       
       case 'textMessage':
-        await handleTextMessage(connection.openAISocket, body);
+        await handleTextMessage(session.openAISocket, payload);
         break;
       
       default:
@@ -197,9 +198,9 @@ async function handleActionRequest(req: Request, apiKey: string) {
     });
 
   } catch (error) {
-    console.error("❌ Error in action request:", error);
+    console.error("❌ Error in user input:", error);
     return new Response(JSON.stringify({
-      error: "Action processing failed",
+      error: "User input processing failed",
       message: error.message
     }), {
       status: 500,
@@ -209,9 +210,9 @@ async function handleActionRequest(req: Request, apiKey: string) {
 }
 
 // Establish OpenAI WebSocket connection
-async function establishOpenAIConnection(connectionId: string, apiKey: string, writer: WritableStreamDefaultWriter) {
+async function establishOpenAIConnection(sessionId: string, apiKey: string, writer: WritableStreamDefaultWriter) {
   try {
-    console.log(`🔗 Connecting to OpenAI for connection: ${connectionId}`);
+    console.log(`🔗 Connecting to OpenAI for session: ${sessionId}`);
     
     const openAIUrl = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
     const openAISocket = new WebSocket(openAIUrl, [], {
@@ -221,17 +222,17 @@ async function establishOpenAIConnection(connectionId: string, apiKey: string, w
       }
     });
 
-    // Update connection with OpenAI socket
-    const connection = activeConnections.get(connectionId);
-    if (connection) {
-      connection.openAISocket = openAISocket;
+    // Update session with OpenAI socket
+    const session = activeSessions.get(sessionId);
+    if (session) {
+      session.openAISocket = openAISocket;
     }
 
     openAISocket.onopen = async () => {
-      console.log(`✅ OpenAI connected for ${connectionId}`);
-      await writeSSEMessage(writer, {
+      console.log(`✅ OpenAI connected for ${sessionId}`);
+      await writeJSONMessage(writer, {
         type: 'connection.established',
-        connectionId: connectionId,
+        sessionId: sessionId,
         timestamp: new Date().toISOString()
       });
     };
@@ -239,11 +240,11 @@ async function establishOpenAIConnection(connectionId: string, apiKey: string, w
     openAISocket.onmessage = async (event) => {
       try {
         const openAIData = JSON.parse(event.data);
-        console.log(`📨 OpenAI -> Stream: ${openAIData.type} for ${connectionId}`);
+        console.log(`📨 OpenAI -> Stream: ${openAIData.type} for ${sessionId}`);
 
         // Handle session.created to send configuration
         if (openAIData.type === 'session.created') {
-          console.log(`⚙️ Sending session configuration for ${connectionId}`);
+          console.log(`⚙️ Sending session configuration for ${sessionId}`);
           const sessionConfig = {
             type: 'session.update',
             session: {
@@ -287,68 +288,80 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
         // Send session.ready after session.updated
         if (openAIData.type === 'session.updated') {
-          await writeSSEMessage(writer, {
+          await writeJSONMessage(writer, {
             type: 'session.ready',
             timestamp: new Date().toISOString(),
             message: 'Session configured and ready'
           });
         }
 
-        // Forward all OpenAI messages to client via SSE
-        await writeSSEMessage(writer, openAIData);
+        // Forward AI audio events as simplified JSON
+        if (openAIData.type === 'response.audio.delta') {
+          await writeJSONMessage(writer, {
+            type: 'audio.delta',
+            data: openAIData.delta
+          });
+        } else if (openAIData.type === 'response.audio.done') {
+          await writeJSONMessage(writer, {
+            type: 'audio.done'
+          });
+        } else {
+          // Forward other events as-is
+          await writeJSONMessage(writer, openAIData);
+        }
         
       } catch (error) {
-        console.error(`❌ Error processing OpenAI message for ${connectionId}:`, error);
+        console.error(`❌ Error processing OpenAI message for ${sessionId}:`, error);
       }
     };
 
     openAISocket.onerror = async (error) => {
-      console.error(`❌ OpenAI WebSocket error for ${connectionId}:`, error);
-      await writeSSEMessage(writer, {
+      console.error(`❌ OpenAI WebSocket error for ${sessionId}:`, error);
+      await writeJSONMessage(writer, {
         type: 'error',
         error: 'OpenAI connection failed'
       });
     };
 
     openAISocket.onclose = async () => {
-      console.log(`🔴 OpenAI WebSocket closed for ${connectionId}`);
-      await writeSSEMessage(writer, {
+      console.log(`🔴 OpenAI WebSocket closed for ${sessionId}`);
+      await writeJSONMessage(writer, {
         type: 'connection.closed',
         timestamp: new Date().toISOString()
       });
       
-      // Clean up connection
-      activeConnections.delete(connectionId);
+      // Clean up session
+      activeSessions.delete(sessionId);
       try {
         await writer.close();
       } catch (e) {
-        console.log(`Connection writer already closed for ${connectionId}`);
+        console.log(`Session writer already closed for ${sessionId}`);
       }
     };
 
   } catch (error) {
-    console.error(`❌ Error establishing OpenAI connection for ${connectionId}:`, error);
-    await writeSSEMessage(writer, {
+    console.error(`❌ Error establishing OpenAI connection for ${sessionId}:`, error);
+    await writeJSONMessage(writer, {
       type: 'error',
       error: 'Failed to establish OpenAI connection'
     });
   }
 }
 
-// Helper function to write SSE messages
-async function writeSSEMessage(writer: WritableStreamDefaultWriter, data: any) {
+// Helper function to write newline-delimited JSON messages
+async function writeJSONMessage(writer: WritableStreamDefaultWriter, data: any) {
   try {
-    const message = `data: ${JSON.stringify(data)}\n\n`;
+    const message = JSON.stringify(data) + '\n';
     await writer.write(new TextEncoder().encode(message));
   } catch (error) {
-    console.error("❌ Error writing SSE message:", error);
+    console.error("❌ Error writing JSON message:", error);
   }
 }
 
 // Handle scenario start
-async function handleStartScenario(openAISocket: WebSocket, body: any) {
+async function handleStartScenario(openAISocket: WebSocket, payload: any) {
   if (openAISocket.readyState === WebSocket.OPEN) {
-    console.log(`📤 Starting scenario: ${body.scenarioId}`);
+    console.log(`📤 Starting scenario with opening message`);
     
     // Send opening message as conversation item
     const conversationItem = {
@@ -358,7 +371,7 @@ async function handleStartScenario(openAISocket: WebSocket, body: any) {
         role: 'user',
         content: [{
           type: 'input_text',
-          text: body.openingMessage
+          text: payload
         }]
       }
     };
@@ -370,19 +383,19 @@ async function handleStartScenario(openAISocket: WebSocket, body: any) {
 }
 
 // Handle audio chunk
-async function handleAudioChunk(openAISocket: WebSocket, body: any) {
+async function handleAudioChunk(openAISocket: WebSocket, payload: any) {
   if (openAISocket.readyState === WebSocket.OPEN) {
     // Forward audio chunk to OpenAI
     const audioEvent = {
       type: 'input_audio_buffer.append',
-      audio: body.data
+      audio: payload
     };
     openAISocket.send(JSON.stringify(audioEvent));
   }
 }
 
 // Handle text message
-async function handleTextMessage(openAISocket: WebSocket, body: any) {
+async function handleTextMessage(openAISocket: WebSocket, payload: any) {
   if (openAISocket.readyState === WebSocket.OPEN) {
     const conversationItem = {
       type: 'conversation.item.create',
@@ -391,7 +404,7 @@ async function handleTextMessage(openAISocket: WebSocket, body: any) {
         role: 'user',
         content: [{
           type: 'input_text',
-          text: body.message
+          text: payload
         }]
       }
     };
