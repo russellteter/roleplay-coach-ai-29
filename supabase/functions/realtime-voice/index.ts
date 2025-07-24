@@ -7,6 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Global connection storage for bidirectional communication
+const activeConnections = new Map();
+
 serve(async (req) => {
   try {
     console.log(`🌐 ${req.method} ${req.url}`);
@@ -66,6 +69,10 @@ serve(async (req) => {
         if (body && body.action === 'connect') {
           console.log("🔗 Starting streaming connection to OpenAI");
           
+          // Generate unique connection ID
+          const connectionId = crypto.randomUUID();
+          console.log(`🆔 Generated connection ID: ${connectionId}`);
+          
           // Create a readable stream for the response
           const stream = new ReadableStream({
             start(controller) {
@@ -80,12 +87,20 @@ serve(async (req) => {
                 }
               });
 
+              // Store the connection for message routing
+              activeConnections.set(connectionId, {
+                socket: openAISocket,
+                controller: controller,
+                createdAt: new Date().toISOString()
+              });
+
               openAISocket.onopen = () => {
                 console.log("✅ Connected to OpenAI Realtime API");
                 
-                // Send connection established event
+                // Send connection established event with connection ID
                 const event = {
                   type: 'connection.established',
+                  connectionId: connectionId,
                   timestamp: new Date().toISOString()
                 };
                 controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
@@ -184,6 +199,11 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
               openAISocket.onclose = (event) => {
                 console.log(`🔴 OpenAI WebSocket closed: ${event.code} ${event.reason}`);
+                
+                // Clean up the connection from active connections
+                activeConnections.delete(connectionId);
+                console.log(`🧹 Removed connection ${connectionId} from active connections`);
+                
                 const closeEvent = {
                   type: 'connection.closed',
                   code: event.code,
@@ -196,9 +216,14 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
 
               // Store the socket for cleanup
               (controller as any).openAISocket = openAISocket;
+              (controller as any).connectionId = connectionId;
             },
             cancel() {
-              console.log("🧹 Cleaning up streaming connection");
+              console.log(`🧹 Cleaning up streaming connection ${(this as any).connectionId}`);
+              const connectionId = (this as any).connectionId;
+              if (connectionId) {
+                activeConnections.delete(connectionId);
+              }
               if ((this as any).openAISocket) {
                 (this as any).openAISocket.close();
               }
@@ -215,10 +240,86 @@ Remember: You are not just an AI assistant - you are playing a specific role to 
           });
         }
 
-        // Handle message sending
+        // Handle message sending to active connection
+        if (body && body.action === 'message') {
+          console.log("📤 Received message to send to OpenAI:", body.message);
+          
+          // Find the first active connection (in production, you'd route by connection ID)
+          let targetConnection = null;
+          for (const [id, connection] of activeConnections.entries()) {
+            if (connection.socket.readyState === WebSocket.OPEN) {
+              targetConnection = connection;
+              console.log(`🎯 Using active connection: ${id}`);
+              break;
+            }
+          }
+          
+          if (!targetConnection) {
+            console.error("❌ No active OpenAI connections found");
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'No active OpenAI connection available'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          
+          try {
+            // Create conversation item for OpenAI
+            const conversationItem = {
+              type: 'conversation.item.create',
+              item: {
+                type: 'message',
+                role: body.role || 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: body.message
+                  }
+                ]
+              }
+            };
+            
+            // Send the conversation item
+            targetConnection.socket.send(JSON.stringify(conversationItem));
+            console.log("📤 Sent conversation.item.create to OpenAI");
+            
+            // Trigger response creation
+            const responseCreate = {
+              type: 'response.create'
+            };
+            
+            targetConnection.socket.send(JSON.stringify(responseCreate));
+            console.log("📤 Sent response.create to OpenAI");
+            
+            return new Response(JSON.stringify({
+              status: 'success',
+              message: 'Message sent to OpenAI and response triggered',
+              data: {
+                role: body.role || 'user',
+                content: body.message
+              }
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+            
+          } catch (error) {
+            console.error("❌ Error sending message to OpenAI:", error);
+            return new Response(JSON.stringify({
+              status: 'error',
+              message: 'Failed to send message to OpenAI',
+              error: error.message
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
+        // Handle legacy send_message for backward compatibility
         if (body && body.action === 'send_message') {
-          console.log("📤 Received message to send to OpenAI");
-          // For now, return success - we'll implement message routing later
+          console.log("📤 Received legacy send_message");
           return new Response(JSON.stringify({
             status: 'success',
             message: 'Message queued for sending'

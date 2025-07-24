@@ -499,9 +499,38 @@ export const useRealtimeVoice = () => {
         openingMessage: scenario.openingMessage 
       });
 
-      // For now, we'll just change the state to STARTED
-      // Message sending will be implemented in the next phase
+      // First, change the state to STARTED
       dispatch({ type: 'STARTED' });
+      
+      // Then immediately send the opening message to trigger AI response
+      if (scenario.openingMessage) {
+        logEvent('▷', 'CLIENT_MESSAGE_SENT', { message: scenario.openingMessage });
+        
+        const messageResponse = await fetch(
+          `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+            },
+            body: JSON.stringify({
+              action: 'message',
+              role: 'user',
+              message: scenario.openingMessage
+            })
+          }
+        );
+
+        if (!messageResponse.ok) {
+          throw new Error(`Failed to send opening message: ${messageResponse.status}`);
+        }
+
+        logEvent('▷', 'OPENING_MESSAGE_SENT', { status: messageResponse.status });
+      } else {
+        console.warn('⚠️ No opening message available for scenario');
+      }
       
     } catch (error) {
       console.error('❌ MANUAL_START_SCENARIO_ERROR:', error);
