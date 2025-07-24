@@ -21,6 +21,7 @@ const config: Config = {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         'inter': ['Inter', 'sans-serif'],
+        'heading': ['Inter', 'sans-serif'],
       },
       colors: {
         border: "hsl(var(--border))",
