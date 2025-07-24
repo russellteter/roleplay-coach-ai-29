@@ -297,7 +297,7 @@ export const useRealtimeVoice = () => {
       abortControllerRef.current = new AbortController();
       
       const response = await fetch(
-        `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`,
+        `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice`,
         {
           method: 'POST',
           headers: {
@@ -506,30 +506,67 @@ export const useRealtimeVoice = () => {
       if (scenario.openingMessage) {
         logEvent('▷', 'CLIENT_MESSAGE_SENT', { message: scenario.openingMessage });
         
-        const messageResponse = await fetch(
-          `https://xirbkztlbixvacekhzyv.functions.supabase.co/realtime-voice`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-              Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
-            },
-            body: JSON.stringify({
-              action: 'message',
-              role: 'user',
-              message: scenario.openingMessage
-            })
+        // Enhanced error handling with retries
+        const sendMessageWithRetry = async (retries = 3): Promise<void> => {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+              
+              const messageResponse = await fetch(
+                `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
+                    Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+                  },
+                  body: JSON.stringify({
+                    action: 'message',
+                    role: 'user',
+                    message: scenario.openingMessage,
+                    connectionId: state.sequenceId // Track connection ID
+                  }),
+                  signal: controller.signal
+                }
+              );
+
+              clearTimeout(timeoutId);
+
+              if (!messageResponse.ok) {
+                throw new Error(`HTTP ${messageResponse.status}: ${messageResponse.statusText}`);
+              }
+
+              logEvent('▷', 'OPENING_MESSAGE_SENT', { 
+                status: messageResponse.status,
+                attempt,
+                connectionId: state.sequenceId
+              });
+              return; // Success, exit retry loop
+              
+            } catch (error) {
+              logEvent('▷', 'MESSAGE_SEND_ATTEMPT_FAILED', { 
+                attempt, 
+                error: error instanceof Error ? error.message : 'Unknown error',
+                willRetry: attempt < retries
+              });
+              
+              if (attempt === retries) {
+                throw error; // Final attempt failed
+              }
+              
+              // Wait before retry with exponential backoff
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            }
           }
-        );
+        };
 
-        if (!messageResponse.ok) {
-          throw new Error(`Failed to send opening message: ${messageResponse.status}`);
-        }
-
-        logEvent('▷', 'OPENING_MESSAGE_SENT', { status: messageResponse.status });
+        await sendMessageWithRetry();
+        
       } else {
         console.warn('⚠️ No opening message available for scenario');
+        setConnectionError('No opening message configured for this scenario');
       }
       
     } catch (error) {
