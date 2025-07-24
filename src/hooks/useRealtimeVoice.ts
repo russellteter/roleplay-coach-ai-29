@@ -175,9 +175,7 @@ export const useRealtimeVoice = () => {
         {
           method: 'GET',
           headers: {
-            'Content-Type': 'application/json',
-            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+            'Content-Type': 'application/json'
           }
         }
       );
@@ -300,9 +298,7 @@ export const useRealtimeVoice = () => {
           method: 'GET',
           headers: {
             'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+            'Connection': 'keep-alive'
           },
           signal: abortController.signal
         })
@@ -463,9 +459,7 @@ export const useRealtimeVoice = () => {
         fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(message)
         }).catch(error => {
@@ -519,9 +513,7 @@ export const useRealtimeVoice = () => {
           fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-              Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify(message)
           }).catch(error => {
@@ -569,9 +561,7 @@ export const useRealtimeVoice = () => {
       fetch(`${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-audio`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          apikey: import.meta.env.SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${import.meta.env.SUPABASE_PUBLISHABLE_KEY}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(textMessage)
       }).catch(error => {
