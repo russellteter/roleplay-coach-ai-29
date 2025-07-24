@@ -63,8 +63,7 @@ const VoiceDemo = () => {
     startAudioCapture,
     stopAudioCapture,
     disconnect,
-    retryConnection,
-    audioContext
+    retryConnection
   } = useRealtimeVoice();
 
   const { scenarios, loading: scenariosLoading, error: scenariosError } = useScenarioPrompts();
@@ -99,10 +98,6 @@ const VoiceDemo = () => {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       setAudioPermissionGranted(true);
-      
-      if (audioContext && audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
       
       toast({
         title: "🎤 Audio Ready",
