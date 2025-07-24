@@ -8,6 +8,7 @@ import { useRealtimeVoice } from '@/hooks/useRealtimeVoice';
 import { useScenarioPrompts } from '@/hooks/useScenarioPrompts';
 import { useToast } from '@/hooks/use-toast';
 import { Scenario } from '@/utils/scenarioPrompts';
+import AudioDiagnostics from '@/components/AudioDiagnostics';
 
 type UseCase = 'customer-support' | 'healthcare' | 'compliance-hr';
 
@@ -396,7 +397,15 @@ const VoiceDemo = () => {
               <Alert variant="destructive" className="mb-6">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription className="flex items-center justify-between">
-                  <span>⚠️ Voice error: {connectionError}</span>
+                  <div>
+                    <div className="font-medium">Connection Error</div>
+                    <div className="text-sm mt-1">{connectionError}</div>
+                    {connectionError.includes('timeout') && (
+                      <div className="text-xs mt-2 text-muted-foreground">
+                        Try checking your internet connection or switching to a different network.
+                      </div>
+                    )}
+                  </div>
                   <div className="flex space-x-2">
                     <Button onClick={handleRetry} size="sm" variant="outline" className="border-red-300 text-red-700 hover:bg-red-50">
                       <RefreshCw className="w-4 h-4 mr-1" />
@@ -542,6 +551,17 @@ const VoiceDemo = () => {
                     </div>
                   </Card>
                 </div>
+              </div>
+            )}
+
+            {/* Audio Diagnostics - Show during active scenario */}
+            {isScenarioStarted && (
+              <div className="mt-6">
+                <AudioDiagnostics 
+                  isRecording={isRecording}
+                  isAISpeaking={isAISpeaking}
+                  audioLevel={0} // You can add actual audio level detection later
+                />
               </div>
             )}
 

@@ -287,9 +287,7 @@ const RealtimeVoiceInterface = ({ category }: RealtimeVoiceInterfaceProps) => {
 
         <TabsContent value="diagnostics">
           <AudioDiagnostics
-            audioContext={realtimeAudioContext}
             isAISpeaking={isAISpeaking}
-            onVolumeChange={handleVolumeChange}
           />
         </TabsContent>
 

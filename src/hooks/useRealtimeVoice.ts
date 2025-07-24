@@ -284,12 +284,18 @@ export const useRealtimeVoice = () => {
 
   // ====== CONNECTION MANAGEMENT ======
 
-  // HTTP Streaming connection function for specific scenario
+  // HTTP Streaming connection function with enhanced error handling
   const connectStream = useCallback((scenarioId: string) => {
     return new Promise<void>((resolve, reject) => {
       try {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
+        
+        // Add connection timeout (10 seconds)
+        const timeoutId = setTimeout(() => {
+          abortController.abort();
+          reject(new Error('Connection timeout - please check your internet connection and try again'));
+        }, 10000);
         
         const streamUrl = `${import.meta.env.SUPABASE_FUNCTIONS_URL}/realtime-voice?scenarioId=${scenarioId}`;
         logEvent('▷', 'STREAM_CONNECTING', { url: streamUrl });
@@ -303,12 +309,15 @@ export const useRealtimeVoice = () => {
           signal: abortController.signal
         })
         .then(async (response) => {
+          clearTimeout(timeoutId);
+          
           if (!response.ok) {
-            throw new Error(`Stream connection failed: ${response.status}`);
+            const errorText = await response.text().catch(() => 'Unknown error');
+            throw new Error(`Connection failed (${response.status}): ${errorText}`);
           }
 
           if (!response.body) {
-            throw new Error('No response body for streaming');
+            throw new Error('No response stream available');
           }
 
           logEvent('✅', 'STREAM_CONNECTED', 'HTTP stream established');
